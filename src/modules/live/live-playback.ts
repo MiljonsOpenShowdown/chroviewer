@@ -90,6 +90,15 @@ function tickTournamentAssistantPlayback(
     actions.updateStatus('waiting');
     return;
   }
+  // A quit or aborted play (e.g. the coordinator returned players to the menu)
+  // has no more gameplay: stop once the received data has been shown, rather
+  // than running on to the song's end like a finished play's late packets.
+  if (runtime.streamQuit && currentTime >= Math.max(runtime.latestSongTime, runtime.latestFrameTime) - 0.02) {
+    runtime.taSyncHolding = false;
+    actions.pause();
+    actions.updateStatus('waiting');
+    return;
+  }
   if (runtime.taSyncHolding) return;
 
   if (!runtime.playbackStarted) {

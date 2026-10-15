@@ -17,6 +17,7 @@ import { useTranslations } from 'use-intl';
 
 import type { BeatmapParser } from '../../core/beatmap/worker/client';
 import { isForcedLightshowMode, type LightshowMode } from '../../core/lighting/basic-light';
+import { hsvPresets } from '../../core/replay/hsv-presets';
 import {
   DEFAULT_VIEWER_SETTINGS,
   defaultViewerSettings,
@@ -282,6 +283,10 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
             preferReplayHsvProfile: search.settings?.preferReplayHsvProfile ?? true,
           }
         : {}),
+      // A bundled HSV profile replaces the player's own
+      ...(search.hsv === undefined
+        ? {}
+        : { overrideHsvProfile: true, preferReplayHsvProfile: false, hsvProfile: hsvPresets[search.hsv] }),
     });
   });
   const settingsRef = useRef(settings);
@@ -353,6 +358,8 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   });
   const session = useViewerSession({
     disableGameUI: search.disableGameUI === true,
+    hitScoresOnly: search.hitScoresOnly === true,
+    lightBrightness: search.lightBrightness ?? 1,
     hidePlatform: search.hidePlatform === true,
     hideGameplayNotes: search.showcase === true,
     lightshowMode,
@@ -555,6 +562,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     appendReplayNoteEvents: session.appendLiveReplayNoteEvents,
     refreshReplayDisplay: session.refreshLiveReplayDisplay,
     externalTimeline: multiview !== undefined,
+    taSyncGroup: search.syncGroup,
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
     hasLiveMap: (hash) => sources.hasLiveMap(hash),
     loadLiveReplay: (hash, replay) => {

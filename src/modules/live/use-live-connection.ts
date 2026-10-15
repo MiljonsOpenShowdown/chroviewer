@@ -54,7 +54,7 @@ export function useLiveConnection(
     const runtime = createLiveRuntime(activeTarget);
     const taSync =
       optionsRef.current.externalTimeline !== true && (activeTarget.source === 'ta' || activeTarget.source === 'cocu')
-        ? createTaLiveSync(activeTarget.playerId)
+        ? createTaLiveSync(activeTarget.playerId, optionsRef.current.taSyncGroup)
         : null;
     runtimeRef.current = runtime;
     setState(initialLiveState);

@@ -133,6 +133,8 @@ export class EnvironmentLightRuntime {
   private menuLightshowSeed: number | null = null;
   private colors: ColorScheme = DEFAULT_COLORS;
   private lightshowMode: LightshowMode = 'full';
+  // Scales every map light's level (lights, bloom and fog glow); notes and sabers are unaffected
+  private lightBrightness = 1;
   private glsColorRuntime: GlsColorRuntime[] = [];
   private jsonTimeToSongBpmTime: (jsonTime: number) => number = (jsonTime) => jsonTime;
   private basicLightSampleBeat = Number.NaN;
@@ -186,6 +188,12 @@ export class EnvironmentLightRuntime {
 
   setLightshowMode(mode: LightshowMode) {
     this.lightshowMode = mode;
+    this.basicLightSampleMode = undefined;
+  }
+
+  setLightBrightness(brightness: number) {
+    this.lightBrightness = Math.min(Math.max(brightness, 0), 1);
+    // Cached samples carry the old brightness
     this.basicLightSampleMode = undefined;
   }
 
@@ -342,7 +350,7 @@ export class EnvironmentLightRuntime {
           sample = sampleGlsColorTween(runtime.source.tween, beat, this.colors, boosted);
           samples.set(runtime.source, sample);
         }
-        const controlled = runtime.target.transform(sample.color, sample.alpha);
+        const controlled = runtime.target.transform(sample.color, sample.alpha * this.lightBrightness);
         if (runtime.target.node !== undefined) {
           runtime.target.node.visible = runtime.initialVisible !== false && controlled.visible;
         }
@@ -615,13 +623,13 @@ export class EnvironmentLightRuntime {
     const inversionIndex = invertColorScheme ? 1 : 0;
     const cached = resolvedByInversion[inversionIndex];
     if (cached !== undefined) return cached;
-    const alpha = resolveBasicLightAlpha(sample);
+    const alpha = resolveBasicLightAlpha(sample) * this.lightBrightness;
     const resolved = {
       color: resolveBasicLightColor(sample, this.colors, invertColorScheme, boosted),
       alpha: sample.fading === true ? Math.max(alpha, 0) : alpha,
       rawAlpha: alpha,
       // event envelope without the chroma color alpha; game directional lights ignore it
-      stateAlpha: sample.fading === true ? Math.max(sample.alpha, 0) : sample.alpha,
+      stateAlpha: (sample.fading === true ? Math.max(sample.alpha, 0) : sample.alpha) * this.lightBrightness,
       fading: sample.fading === true,
     };
     resolvedByInversion[inversionIndex] = resolved;

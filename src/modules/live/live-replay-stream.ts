@@ -115,6 +115,7 @@ export function applyLiveReplayEnd(runtime: LiveRuntime, packet: ReplayStreamPac
   }
   runtime.streamEnding = true;
   const waiting = end.completion === ReplayCompletion.QUIT || end.completion === ReplayCompletion.ABORTED;
+  runtime.streamQuit = waiting;
   runtime.playbackAttemptPending = !waiting;
   return waiting ? 'waiting' : 'ending';
 }

@@ -286,6 +286,14 @@ export class MapView implements RenderView {
     this.replayView.setGameUIEnabled(enabled);
   }
 
+  setLightBrightness(brightness: number) {
+    this.environmentLights.setLightBrightness(brightness);
+  }
+
+  setHitScoresOnly(hitScoresOnly: boolean) {
+    this.replayView.setHitScoresOnly(hitScoresOnly);
+  }
+
   setPlayerPlatformVisible(visible: boolean) {
     this.playerPlatformVisible = visible;
     this.applyPlayerPlatformVisibility();

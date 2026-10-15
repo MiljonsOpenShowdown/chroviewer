@@ -95,6 +95,9 @@ const searchKeyAliases = new Map(
     poolshowcase: 'poolShowcase',
     poolshowcaseconfig: 'poolShowcaseConfig',
     disablegameui: 'disableGameUI',
+    hitscoresonly: 'hitScoresOnly',
+    lightbrightness: 'lightBrightness',
+    hsv: 'hsv',
     hideplatform: 'hidePlatform',
     lightshow: 'lightshow',
     lights: 'lights',
@@ -127,6 +130,7 @@ const searchKeyAliases = new Map(
     matchid: 'matchId',
     watcherplayerid: 'watcherPlayerId',
     authtoken: 'authToken',
+    syncgroup: 'syncGroup',
   }),
 );
 
@@ -142,6 +146,7 @@ const stringSearchAliases = {
   matchId: ['matchid'],
   watcherPlayerId: ['watcherplayerid'],
   authToken: ['authtoken'],
+  syncGroup: ['syncgroup'],
   showcaseConfig: ['showcaseconfig'],
   poolShowcaseConfig: ['poolshowcaseconfig'],
 };

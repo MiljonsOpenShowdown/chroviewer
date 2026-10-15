@@ -65,6 +65,8 @@ export interface LiveExperienceOptions {
   appendReplayNoteEvents: (events: ReplayNoteEvent[]) => void;
   refreshReplayDisplay: () => void;
   externalTimeline?: boolean;
+  /** Limits TA live sync to viewers with the same group; unset syncs with every viewer on this origin. */
+  taSyncGroup?: string;
   startBarrier?: { id: string; barrier: MultiviewStartBarrier };
   hasLiveMap: (hash: string) => boolean;
   loadLiveReplay: (hash: string, replay: Replay) => Promise<SourceResult<void>>;

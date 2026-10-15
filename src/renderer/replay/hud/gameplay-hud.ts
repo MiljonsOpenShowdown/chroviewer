@@ -49,6 +49,8 @@ export class ReplayGameplayHud {
   private songDurationSeconds: number | null = null;
   private scoreStackLayout = '';
   private lastTextRefreshTime = Number.NEGATIVE_INFINITY;
+  // Shows only the flying hit scores (hit-score visualizer), not the score panels
+  private hitScoresOnly = false;
 
   constructor() {
     this.root.visible = false;
@@ -159,7 +161,7 @@ export class ReplayGameplayHud {
     this.comboBreakTime = replay === null ? null : firstComboBreakTime(replay);
     this.lastTextRefreshTime = Number.NEGATIVE_INFINITY;
     this.root.visible = replay !== null;
-    this.scoreHud.visible = replay !== null && replay.scores.length > 0;
+    this.scoreHud.visible = !this.hitScoresOnly && replay !== null && replay.scores.length > 0;
     this.flyingScores.clear();
     this.updateComboBreak(0);
     if (this.timeline !== null) {
@@ -177,6 +179,11 @@ export class ReplayGameplayHud {
     this.root.visible = enabled && this.timeline !== null;
   }
 
+  setHitScoresOnly(hitScoresOnly: boolean) {
+    this.hitScoresOnly = hitScoresOnly;
+    this.scoreHud.visible = !hitScoresOnly && this.timeline !== null && this.timeline.replay.scores.length > 0;
+  }
+
   setHitScoreVisualizer(hitScoreVisualizer: HitScoreVisualizerConfig | null) {
     if (this.timeline === null) return;
     this.timeline = { ...this.timeline, hitScoreVisualizer };
@@ -188,7 +195,7 @@ export class ReplayGameplayHud {
     if (timeline === null) return;
     this.timeline = buildReplayTimeline(timeline.replay, timeline.hitScoreVisualizer);
     this.comboBreakTime = firstComboBreakTime(timeline.replay);
-    this.scoreHud.visible = timeline.replay.scores.length > 0;
+    this.scoreHud.visible = !this.hitScoresOnly && timeline.replay.scores.length > 0;
     this.refreshDuration();
   }
 

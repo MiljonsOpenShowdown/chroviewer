@@ -1,4 +1,4 @@
-CHROVIEWER QUERY PARAMETERS
+TCHROVIEWER QUERY PARAMETERS
 
 Values in the URL override locally saved viewer settings for that page load.
 
@@ -8,6 +8,11 @@ playerId=<platform id>        Platform ID whose live play should be watched.
 hideUI=true                   Hide all cards, controls, settings, errors, and overlays.
 disableGameUI=true            Hide the in-game HUD: health, combo, score, rank, accuracy,
                               multiplier, song progress, and hit-score visualizer.
+hitScoresOnly=true            Hide the in-game HUD except the hit-score visualizer (flying
+                              hit scores). disableGameUI=true still hides everything.
+hsv=mos                       Use a HitScoreVisualizer profile bundled with the viewer
+                              (src/core/replay/hsv-presets/) instead of the player's own.
+                              Keeps embed URLs short: the host rejects URLs over ~3.9 KB.
 
 AUDIO
 masterVolume=0..1             Overall output level. Multiplies song and hitsound volume.
@@ -32,8 +37,23 @@ the earliest time available to every iframe and then correct clock drift automat
 BroadcastChannel is used when available, with same-origin localStorage events as the
 fallback. No parent-page coordinator is required.
 
+syncGroup=<id>                Only sync with TA viewers given the same id. Without it, every
+                              TA viewer on this origin syncs together, across all browser
+                              tabs, so opening the same embedding page in a second tab
+                              re-syncs the first. Give each embedding page load its own id
+                              (e.g. a random UUID shared by that page's iframes).
+
+SETTINGS ISOLATION
+isolatedSettings=true         Start from the default settings instead of the ones saved in
+                              this browser, and never save changes. URL parameters and
+                              viewer-settings messages still apply on top. Use it for embeds
+                              that must look the same for every visitor.
+
 LIGHTING AND PERFORMANCE
 lights=full|static|none       Full mapped lights, fixed static lights, or no mapped lights.
+lightBrightness=0..1          Scale every map light's level, including bloom and fog glow.
+                              Notes, walls and sabers are unaffected. Lights with a built-in
+                              minimum level keep it. Default 1.
 lightshow=full-lightshow      Show only the full lightshow and hide gameplay objects.
 showcase=true                 Hide gameplay notes, bombs, arcs, chains, and interactable walls.
                               Fake or uninteractable decorative walls remain visible.

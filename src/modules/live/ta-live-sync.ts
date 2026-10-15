@@ -99,9 +99,12 @@ function validSync(value: unknown): value is SyncMessage {
   );
 }
 
-function createSyncBus(onMessage: (message: SyncWireMessage) => void): SyncBus {
+function createSyncBus(onMessage: (message: SyncWireMessage) => void, group?: string): SyncBus {
+  // A group keeps separate embedding pages (e.g. two tabs of the same match) from syncing each other
+  const name = group === undefined ? channelName : `${channelName}:${group}`;
+  const key = group === undefined ? storageKey : `${storageKey}:${group}`;
   if (typeof BroadcastChannel !== 'undefined') {
-    const channel = new BroadcastChannel(channelName);
+    const channel = new BroadcastChannel(name);
     channel.onmessage = (event: MessageEvent<unknown>) => {
       if (validPresence(event.data) || validSync(event.data)) onMessage(event.data);
     };
@@ -116,7 +119,7 @@ function createSyncBus(onMessage: (message: SyncWireMessage) => void): SyncBus {
   }
 
   const onStorage = (event: StorageEvent) => {
-    if (event.key !== storageKey || event.newValue === null) return;
+    if (event.key !== key || event.newValue === null) return;
     try {
       const message: unknown = JSON.parse(event.newValue);
       if (validPresence(message) || validSync(message)) onMessage(message);
@@ -128,8 +131,8 @@ function createSyncBus(onMessage: (message: SyncWireMessage) => void): SyncBus {
   return {
     send(message) {
       try {
-        localStorage.setItem(storageKey, JSON.stringify({ ...message, nonce: crypto.randomUUID() }));
-        localStorage.removeItem(storageKey);
+        localStorage.setItem(key, JSON.stringify({ ...message, nonce: crypto.randomUUID() }));
+        localStorage.removeItem(key);
       } catch {
         // Storage can be unavailable in privacy-restricted iframe contexts.
       }
@@ -152,7 +155,7 @@ export function chooseTaLiveSyncTarget(members: PresenceMessage[]) {
   return Math.max(commonFirstFrame, earliestCurrentTime);
 }
 
-export function createTaLiveSync(platformId: string) {
+export function createTaLiveSync(platformId: string, group?: string) {
   const instanceId = crypto.randomUUID();
   const peers = new Map<string, PeerPresence>();
   let joinedAt = Date.now();
@@ -177,7 +180,7 @@ export function createTaLiveSync(platformId: string) {
       pendingSync = message;
       lastDirectiveId = message.directiveId;
     }
-  });
+  }, group);
 
   function localPresence(snapshot: TaLiveSyncSnapshot, now: number): PresenceMessage {
     return { ...snapshot, instanceId, joinedAt, platformId, sentAt: now, type: 'presence' };

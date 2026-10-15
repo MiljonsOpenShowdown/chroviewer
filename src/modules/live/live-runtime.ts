@@ -55,6 +55,8 @@ export interface LiveRuntime {
   sessionPlayerId: string;
   socket: WebSocket | null;
   streamEnding: boolean;
+  /** The play was quit or aborted: playback stops at the end of the received data. */
+  streamQuit: boolean;
   streamPaused: boolean;
   taLive: boolean;
   taBufferingStartedAt: number;
@@ -99,6 +101,7 @@ export function createLiveRuntime(target: LiveTarget): LiveRuntime {
     sessionPlayerId: target.watcherPlayerId ?? '',
     socket: null,
     streamEnding: false,
+    streamQuit: false,
     streamPaused: false,
     taLive: target.source === 'ta' || target.source === 'cocu',
     taBufferingStartedAt: 0,
@@ -140,6 +143,7 @@ export function resetLiveStream(runtime: LiveRuntime) {
   runtime.receivedPoseFrameCount = 0;
   runtime.replay = null;
   runtime.streamEnding = false;
+  runtime.streamQuit = false;
   runtime.streamPaused = false;
   runtime.taLiveMapHash = '';
   runtime.taBufferingStartedAt = 0;

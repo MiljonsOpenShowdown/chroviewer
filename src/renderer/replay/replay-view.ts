@@ -281,6 +281,10 @@ export class ReplayView {
     this.gameplayHud.setHitScoreVisualizer(hitScoreVisualizer);
   }
 
+  setHitScoresOnly(hitScoresOnly: boolean) {
+    this.gameplayHud.setHitScoresOnly(hitScoresOnly);
+  }
+
   setGameUIEnabled(enabled: boolean) {
     this.gameUIEnabled = enabled;
     this.gameplayHud.setEnabled(enabled && !isForcedLightshowMode(this.lightshowMode));

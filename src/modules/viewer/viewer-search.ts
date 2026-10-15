@@ -1,5 +1,6 @@
 import * as z from 'zod/mini';
 
+import { hsvPresetIds } from '../../core/replay/hsv-presets';
 import type { SharedViewerSettings } from '../../core/share-link';
 import { viewerSettingsPatchSchema } from '../../core/viewer-settings';
 import {
@@ -79,6 +80,9 @@ export const viewerSearchSchema = z.pipe(
     poolShowcase: z.catch(z.optional(z.boolean()), undefined),
     poolShowcaseConfig: z.catch(z.optional(z.string().check(z.maxLength(250_000))), undefined),
     disableGameUI: z.catch(z.optional(z.boolean()), undefined),
+    hitScoresOnly: z.catch(z.optional(z.boolean()), undefined),
+    lightBrightness: z.catch(z.optional(unitNumberSchema), undefined),
+    hsv: z.catch(z.optional(z.enum(hsvPresetIds)), undefined),
     hidePlatform: z.catch(z.optional(z.boolean()), undefined),
     lightshow: z.catch(z.optional(z.literal('full-lightshow')), undefined),
     lights: z.catch(z.optional(z.enum(['full', 'full-lightshow', 'static', 'none'])), undefined),
@@ -110,6 +114,8 @@ export const viewerSearchSchema = z.pipe(
     matchId: z.catch(z.optional(liveIdSchema), undefined),
     watcherPlayerId: z.catch(z.optional(livePlayerIdSchema), undefined),
     authToken: z.catch(z.optional(z.string().check(z.minLength(1), z.maxLength(4096))), undefined),
+    // TA live viewers only sync with viewers sharing this group (e.g. one embedding page)
+    syncGroup: z.catch(z.optional(liveIdSchema), undefined),
   }),
   z.transform((search) => {
     if (search.party !== undefined) {

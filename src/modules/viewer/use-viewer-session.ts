@@ -30,6 +30,10 @@ type ViewerSources = ReturnType<typeof useViewerSources>;
 
 interface ViewerSessionOptions {
   disableGameUI: boolean;
+  /** Game UI shows only the hit-score visualizer. */
+  hitScoresOnly?: boolean;
+  /** 0-1 multiplier for every map light. */
+  lightBrightness?: number;
   hidePlatform: boolean;
   hideGameplayNotes: boolean;
   lightshowMode: LightshowMode;
@@ -63,6 +67,8 @@ interface ViewerSessionOptions {
 
 export function useViewerSession({
   disableGameUI,
+  hitScoresOnly = false,
+  lightBrightness = 1,
   hidePlatform,
   hideGameplayNotes,
   lightshowMode,
@@ -131,6 +137,14 @@ export function useViewerSession({
   useEffect(() => {
     viewerRef.current?.view.setGameUIEnabled(!disableGameUI);
   }, [disableGameUI, viewerReady]);
+
+  useEffect(() => {
+    viewerRef.current?.view.setHitScoresOnly(hitScoresOnly);
+  }, [hitScoresOnly, viewerReady]);
+
+  useEffect(() => {
+    viewerRef.current?.view.setLightBrightness(lightBrightness);
+  }, [lightBrightness, viewerReady]);
 
   useEffect(() => {
     viewerRef.current?.view.setPlayerPlatformVisible(!hidePlatform);
