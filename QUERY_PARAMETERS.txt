@@ -1,0 +1,155 @@
+CHROVIEWER QUERY PARAMETERS
+
+Values in the URL override locally saved viewer settings for that page load.
+
+LIVE SOURCE
+liveSource=ta                 Use TournamentAssistant live replay packets.
+playerId=<platform id>        Platform ID whose live play should be watched.
+hideUI=true                   Hide all cards, controls, settings, errors, and overlays.
+disableGameUI=true            Hide the in-game HUD: health, combo, score, rank, accuracy,
+                              multiplier, song progress, and hit-score visualizer.
+
+AUDIO
+masterVolume=0..1             Overall output level. Multiplies song and hitsound volume.
+songVolume=0..1               Song volume before the master volume is applied.
+hitsoundVolume=0..1           Hitsound volume before the master volume is applied.
+hitsounds=true|false          Enable or disable hitsounds.
+audioOffsetMs=-1000..1000     Shift song and hitsound timing in milliseconds.
+
+For liveSource=ta, masterVolume is re-read while the viewer is running. A same-origin
+overlay may update the iframe's query string with history.replaceState and the new
+volume is applied without reloading the iframe, map, audio, or renderer.
+Example: iframe.contentWindow.history.replaceState(null, '', '?liveSource=ta&playerId=123&masterVolume=0.4')
+
+Cross-origin embeds can update audio without reloading by posting a message to the
+viewer iframe:
+{ type: 'beatkhana:viewer-settings', masterVolume: 0.4, hitsoundVolume: 0.8 }
+
+TA IFRAME SYNCHRONISATION
+TA viewers on the same origin announce their platform ID, map hash, available replay
+range, and playback clock to one another. Viewers with the same map hash rendezvous at
+the earliest time available to every iframe and then correct clock drift automatically.
+BroadcastChannel is used when available, with same-origin localStorage events as the
+fallback. No parent-page coordinator is required.
+
+LIGHTING AND PERFORMANCE
+lights=full|static|none       Full mapped lights, fixed static lights, or no mapped lights.
+lightshow=full-lightshow      Show only the full lightshow and hide gameplay objects.
+showcase=true                 Hide gameplay notes, bombs, arcs, chains, and interactable walls.
+                              Fake or uninteractable decorative walls remain visible.
+                              Without showcaseConfig, an ordinary map= source is loaded.
+                              With showcaseConfig, the configured showcase owns map loading.
+qualityPreset=broadcast       Apply the optimized broadcast defaults listed below.
+maxFps=1..240                 Maximum render frame rate. Broadcast default: 60.
+graphicsQuality=none|low|medium|high
+mirrorQuality=none|low|medium|high
+                              Mirror-only alias for graphicsQuality.
+mirrorResolution=0..4096      Mirror target size in pixels; 0 disables mirrors.
+mirrorMsaaSamples=0..8        Mirror render-target MSAA samples.
+msaaSamples=0..8              Main scene render-target MSAA samples.
+postBloomWidth=64..2048       Base width of the post-bloom pyramid.
+bloomFogSize=64..1024         Width and height of the bloom-fog capture target.
+screenDisplacement=true|false Enable wall screen-displacement rendering.
+renderScale=0.5..1.5          Internal rendering resolution multiplier.
+outputWidth=64..7680          Fixed base output width; requires outputHeight.
+outputHeight=64..4320         Fixed base output height; requires outputWidth.
+
+The broadcast preset uses maxFps=60, renderScale=0.85, msaaSamples=2,
+mirrorResolution=0, mirrorMsaaSamples=0, postBloomWidth=640,
+bloomFogSize=256, screenDisplacement=false, replayTrailSamples=12, and static
+lights. Any explicitly supplied setting above overrides the preset. Fixed output
+dimensions are multiplied by renderScale and the capped device pixel ratio.
+
+SABERS AND TRAILS
+preferReplayColors=true|false
+customColors=true|false
+leftColor=%23rrggbb            URL-encoded #rrggbb left saber color.
+rightColor=%23rrggbb           URL-encoded #rrggbb right saber color.
+showSabers=true|false
+saber=cg5                     Select CG5 (alias for saberModel=cg5).
+saberModel=default|beatkhana|cg5|cube-community-new|cube-community-v1|euc
+saberWidth=0.25..3            Scale the saber's width without changing its length.
+saberScale=0.25..3
+saberBladeLength=0.1..2
+saberBladeThickness=0.001..0.03
+saberCoreThickness=0.0005..0.02
+saberCoreInset=0..0.2
+showSaberTrails=true|false
+replayTrailShape=flag|rectangle
+replayTrailLength=0.02..1.5
+replayTrailThinness=0..0.95
+replayTrailSamples=2..128
+replayTrailFade=0.1..5
+replayTrailOpacity=0..2
+replayTrailMotionThreshold=0.0001..0.02
+replayTrailSmoothing=true|false (default true; predicts curved trail points across large replay-frame gaps)
+saberGripLength=0.02..0.3
+saberGripThickness=0.002..0.03
+saberGuardSize=0.005..0.08
+saberGuardThickness=0.0005..0.01
+saberCollarSize=0.002..0.04
+saberCollarThickness=0.0005..0.01
+saberCollarSpacing=0..0.2
+saberRingCount=0..5
+saberRingSize=0.002..0.03
+saberRingThickness=0.001..0.02
+saberRingSpacing=0..0.04
+saberPommelLength=0.002..0.05
+saberPommelThickness=0.002..0.03
+saberXOffset=-0.25..0.25
+saberYOffset=-0.25..0.25
+saberZOffset=-0.25..0.25
+saberXRotation=-45..45
+saberYRotation=-45..45
+saberZRotation=-45..45
+
+Every saber parameter is validated with the same limits as the settings panel. Flat
+parameters override saved settings and may also be supplied inside the existing
+settings JSON query object.
+
+Custom sabers retain their native mesh and trail endpoints. CG5 includes its
+animated fire trail and glow. In the compositor, set saberModel=cg5 in the selected
+player's settings object, just like euc or beatkhana; other players keep their own
+models and colors. If the compositor builds a viewer URL per player, append
+&saber=cg5 (or &saberModel=cg5) to that player's URL.
+
+CAMERA
+camera=static|follow|first-person
+fov=60..120                   Replay camera field of view in degrees.
+
+PLAYBACK AND SOURCES
+autoplay=true|false           Attempt playback without waiting for the play button.
+map=<BeatSaver key or URL>    Load a map preview.
+replayUrl=<HTTPS URL>         Load a replay file: BeatLeader .bsor, ScoreSaber, or a recorded
+                              TournamentAssistant stream ("TAReplayStream v1" header, then
+                              each websocket frame as [uint32 LE length][ReplayStreamPacket]).
+scoreId=<ScoreSaber score>    Load a ScoreSaber replay.
+beat=<number>                 Initial beat for non-live playback.
+difficulty=<zero-based index> Difficulty index for a map preview.
+
+EXAMPLE
+?liveSource=ta&playerId=76561199016011545&hideUI=true&masterVolume=0.8&songVolume=0.7&hitsoundVolume=0.5&lights=static&renderScale=0.75
+
+Full mapped lights with gameplay objects hidden and decorative walls retained:
+?showcase=true&lights=full&map=key
+
+
+ENVIRONMENT OVERRIDES
+useMapEnvironment=true|false  Override the player's environment with the map's default stage.
+preferReplayEnvironment=true|false
+customEnvironmentColors=true|false  Override all six light channels independently of saber colors.
+preferReplayEnvironmentColors=true|false  Use recorded lights unless customEnvironmentColors is enabled.
+environmentLeftColor=%23rrggbb
+environmentRightColor=%23rrggbb
+environmentWhiteColor=%23rrggbb
+environmentLeftBoostColor=%23rrggbb
+environmentRightBoostColor=%23rrggbb
+environmentWhiteBoostColor=%23rrggbb
+Saber overrides do not replace environment colors. Existing shared customColors palettes retain their old behavior until the new controls are explicitly set.
+
+COMPOSITOR SYNCHRONIZATION
+compositorSyncType=slow|wait-for-all
+compositorWaitSeconds=1..60   Default 30 seconds, maximum 60 seconds.
+All visible players must select wait-for-all. Missing or mixed settings default to slow.
+Waiting holds stream playback until the same map hash, difficulty, characteristic and song speed are buffered for every visible player. All clocks are started in one compositor task using a common time reference. A timeout or incompatible map falls back to normal gradual playback. Waiting is only applied at stream startup, never periodically during playback. Replay memory is bounded while waiting and while playing the delayed stream.
+For multiview embeds these values belong in each player's settings object. Slow mode remains the default. Browser, OBS, windowed and Spout bridges all use the same compositor protocol and render host.

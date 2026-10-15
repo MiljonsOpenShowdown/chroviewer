@@ -1,0 +1,31 @@
+{
+  "files.exclude": {
+    ".output": true,
+    ".tanstack": true,
+    "node_modules": true
+  },
+  "search.exclude": {
+    ".output": true,
+    ".tanstack": true,
+    "node_modules": true,
+    "public/environments": true
+  },
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "[javascript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "explicit"
+  },
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "npm.scriptRunner": "vp",
+  "oxc.disableNestedConfig": true,
+  "oxc.fmt.disableNestedConfig": true,
+  "tailwindCSS.classFunctions": ["clsx", "cva", "twMerge"],
+  "tailwindCSS.experimental.configFile": {
+    "src/styles.css": "src/**/*.{css,ts,tsx}"
+  },
+  "tailwindCSS.files.exclude": ["**/.git/**", "**/.output/**", "**/.tanstack/**", "**/node_modules/**"]
+}
