@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BeatmapParser } from '../../core/beatmap/worker/client';
 import { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
 import { broadcastSettingsForPlayerCount } from '../../renderer/render-performance';
+import { fetchBeatSaverHash } from '../../sources/beatsaver/provider';
 import { EmbeddedRealtimeScoreTimeline } from '../live/embedded-realtime-score-sync';
 import { LiveMapCache } from '../live/live-map-cache';
 import { ViewerShell, type MultiviewPlaybackSnapshot } from '../viewer/viewer-shell';
@@ -181,6 +182,15 @@ export function MultiviewShell() {
         }
         if (isRecord(player.score)) scoreTimeline.add(player.score);
       }
+      // Maps the parent expects to be played download now, not once a stream starts
+      const preload = (data as Partial<MultiviewConfigMessage>).preloadMapHashes;
+      if (Array.isArray(preload)) {
+        for (const hash of preload.slice(0, 4)) {
+          if (typeof hash !== 'string' || !/^[0-9a-f]{40}$/i.test(hash)) continue;
+          const key = hash.toUpperCase();
+          if (!mapCache.has(key)) void mapCache.getOrLoad(key, () => fetchBeatSaverHash(key));
+        }
+      }
       // Scores update continuously. Keep them in the timeline without turning
       // every packet into a React rerender of every POV.
       const signature = configurationSignature(next);
@@ -233,7 +243,7 @@ export function MultiviewShell() {
     window.addEventListener('message', receive);
     window.parent.postMessage({ type: 'beatkhana:multiview-ready', version: 1 }, '*');
     return () => window.removeEventListener('message', receive);
-  }, [nativeBridge, startBarrier, timeline]);
+  }, [mapCache, nativeBridge, startBarrier, timeline]);
 
   useEffect(() => {
     if (host === null) return;
@@ -356,6 +366,7 @@ export function MultiviewShell() {
             scoreTimelinesRef.current.get(player.id)?.at(timeline.sampleFor(player.id, now)?.time ?? 0)?.score ??
             player.score,
           status: playbackRef.current.get(player.id)?.status ?? 'waiting',
+          streamId: playbackRef.current.get(player.id)?.streamId ?? null,
           time: timeline.sampleFor(player.id, now)?.time ?? 0,
         })),
       };
@@ -415,7 +426,14 @@ export function MultiviewShell() {
     const defaults = broadcastSettingsForPlayerCount(visible.length);
     return visible.map((player) => ({
       ...player,
-      settings: { ...defaults, ...player.settings },
+      settings: {
+        // qualityPreset "" opts a tile out of the broadcast performance
+        // defaults; it keeps only the multiview sync timing
+        ...(player.settings.qualityPreset === ''
+          ? { syncThresholdMs: defaults.syncThresholdMs, syncIntervalMs: defaults.syncIntervalMs }
+          : defaults),
+        ...player.settings,
+      },
       masterVolume: player.id === audioOwner ? player.masterVolume : 0,
     }));
   }, [players]);

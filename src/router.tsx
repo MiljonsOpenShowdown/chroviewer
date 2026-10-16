@@ -98,6 +98,7 @@ const searchKeyAliases = new Map(
     hitscoresonly: 'hitScoresOnly',
     lightbrightness: 'lightBrightness',
     hsv: 'hsv',
+    catchupurl: 'catchupUrl',
     hideplatform: 'hidePlatform',
     lightshow: 'lightshow',
     lights: 'lights',
@@ -147,6 +148,7 @@ const stringSearchAliases = {
   watcherPlayerId: ['watcherplayerid'],
   authToken: ['authtoken'],
   syncGroup: ['syncgroup'],
+  catchupUrl: ['catchupurl'],
   showcaseConfig: ['showcaseconfig'],
   poolShowcaseConfig: ['poolshowcaseconfig'],
 };

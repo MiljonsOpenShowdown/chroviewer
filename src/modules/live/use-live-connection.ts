@@ -35,6 +35,14 @@ import {
   ludusWebSocketUrl,
 } from './ludus-protocol';
 import { createTaLiveSync } from './ta-live-sync';
+import { readTaReplayFilePackets } from './ta-replay-file';
+
+// A catch-up file that takes longer than this is skipped for the live stream alone
+const catchupTimeoutMs = 8000;
+
+function packetSequence(packet: ReplayStreamPacket) {
+  return packet.body.case === 'chunk' || packet.body.case === 'end' ? (packet.body.value.cursor?.sequence ?? 0n) : 0n;
+}
 
 export function useLiveConnection(
   target: LiveTarget | null,
@@ -170,6 +178,7 @@ export function useLiveConnection(
       const buffered = runtime.bufferedPackets;
       resetLiveStream(runtime);
       runtime.currentStreamId = packet.streamId;
+      setState((current) => ({ ...current, streamId: packet.streamId }));
       const replay = createLiveReplay(start, activeTarget.source === 'ta' || activeTarget.source === 'cocu');
       runtime.replay = replay;
       const startBarrier = optionsRef.current.startBarrier;
@@ -352,7 +361,47 @@ export function useLiveConnection(
       }
     }
 
+    // Live packets wait here while caught-up history is fetched, so the history
+    // (older sequence numbers) is applied first and the live packets after it
+    let heldPackets: ArrayBuffer[] | null = null;
+    const catchupUrl =
+      activeTarget.source === 'ta' || activeTarget.source === 'cocu' ? optionsRef.current.taCatchupUrl : undefined;
+    if (catchupUrl !== undefined) {
+      heldPackets = [];
+      void catchUp(catchupUrl);
+    }
+
+    async function catchUp(url: string) {
+      const fetched = await Result.tryPromise({
+        try: async () => {
+          const response = await fetch(url, { signal: AbortSignal.timeout(catchupTimeoutMs) });
+          if (!response.ok) throw new Error(`catch-up returned ${String(response.status)}`);
+          return readTaReplayFilePackets(new Uint8Array(await response.arrayBuffer()));
+        },
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      });
+      if (disposed) return;
+      if (fetched.isOk()) {
+        // Start first, then everything else in send order
+        const packets = [...fetched.value].sort((left, right) => {
+          if (left.body.case === 'start') return -1;
+          if (right.body.case === 'start') return 1;
+          return Number(packetSequence(left) - packetSequence(right));
+        });
+        for (const packet of packets) applyReplayPacket(packet, true);
+        if (runtime.replay !== null) runtime.taCatchupStart = true;
+      }
+      const held = heldPackets ?? [];
+      heldPackets = null;
+      for (const bytes of held) handleTournamentAssistantReplay(bytes);
+      tickPlayback();
+    }
+
     function handleTournamentAssistantReplay(bytes: ArrayBuffer) {
+      if (heldPackets !== null) {
+        heldPackets.push(bytes);
+        return;
+      }
       const decoded = Result.try(() => fromBinary(ReplayStreamPacketSchema, new Uint8Array(bytes)));
       if (decoded.isErr()) return;
       applyReplayPacket(decoded.value);
@@ -497,7 +546,11 @@ export function useLiveConnection(
             first !== undefined &&
             !runtime.streamPaused &&
             (runtime.streamEnding || runtime.latestFrameTime - first >= Math.max(0.75, runtime.playbackDelay)),
-          firstFrameTime: first ?? 0,
+          // Caught-up history covers the play so far; start just behind the live edge
+          firstFrameTime:
+            runtime.taCatchupStart && first !== undefined
+              ? Math.max(first, runtime.latestFrameTime - runtime.playbackDelay)
+              : (first ?? 0),
           latestFrameTime: runtime.latestFrameTime,
           playbackRate: runtime.playbackRate,
           minimumBufferSeconds: runtime.streamEnding ? 0.05 : Math.max(0.75, runtime.playbackDelay),

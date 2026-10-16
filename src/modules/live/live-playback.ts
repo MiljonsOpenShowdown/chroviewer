@@ -91,11 +91,11 @@ function tickTournamentAssistantPlayback(
     return;
   }
   // A quit or aborted play (e.g. the coordinator returned players to the menu)
-  // has no more gameplay: stop once the received data has been shown, rather
-  // than running on to the song's end like a finished play's late packets.
-  if (runtime.streamQuit && currentTime >= Math.max(runtime.latestSongTime, runtime.latestFrameTime) - 0.02) {
+  // is over: stop at once, rather than playing out the buffered gameplay or
+  // running on to the song's end like a finished play's late packets.
+  if (runtime.streamQuit) {
     runtime.taSyncHolding = false;
-    actions.pause();
+    if (clock.isPlaying()) actions.pause();
     actions.updateStatus('waiting');
     return;
   }
@@ -113,7 +113,12 @@ function tickTournamentAssistantPlayback(
     }
     runtime.playbackAttemptPending = false;
     runtime.playbackStarted = true;
-    actions.seek(firstFrameTime);
+    // Caught-up history covers the play so far; join it just behind the live edge
+    actions.seek(
+      runtime.taCatchupStart
+        ? Math.max(firstFrameTime, runtime.latestFrameTime - runtime.playbackDelay)
+        : firstFrameTime,
+    );
   } else {
     runtime.playbackAttemptPending = false;
   }

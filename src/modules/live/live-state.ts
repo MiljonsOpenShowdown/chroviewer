@@ -9,5 +9,6 @@ export const initialLiveState: LiveExperienceState = {
   pendingChatMessageIds: [],
   playState: LudusPlayState.UNSPECIFIED,
   status: 'connecting',
+  streamId: '',
   viewerCount: null,
 };

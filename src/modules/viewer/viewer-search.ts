@@ -83,6 +83,8 @@ export const viewerSearchSchema = z.pipe(
     hitScoresOnly: z.catch(z.optional(z.boolean()), undefined),
     lightBrightness: z.catch(z.optional(unitNumberSchema), undefined),
     hsv: z.catch(z.optional(z.enum(hsvPresetIds)), undefined),
+    // TA replay file of the live play so far, so a viewer opened midway starts at the live edge
+    catchupUrl: z.catch(z.optional(remoteSourceUrlSchema), undefined),
     hidePlatform: z.catch(z.optional(z.boolean()), undefined),
     lightshow: z.catch(z.optional(z.literal('full-lightshow')), undefined),
     lights: z.catch(z.optional(z.enum(['full', 'full-lightshow', 'static', 'none'])), undefined),

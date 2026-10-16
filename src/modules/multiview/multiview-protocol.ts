@@ -29,6 +29,11 @@ export interface MultiviewConfigMessage {
   type: 'beatkhana:multiview-config';
   version: 1;
   players: MultiviewPlayerConfig[];
+  /**
+   * Map hashes to download ahead of time, e.g. a map that is loaded but not
+   * started yet, so a live stream of it starts without waiting on BeatSaver.
+   */
+  preloadMapHashes?: string[];
 }
 
 /** Playback control for recorded replays. Applies to every replay tile at once. */
@@ -55,6 +60,8 @@ export interface MultiviewStateMessage {
     platformIds: string[];
     score: unknown;
     status: string;
+    /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
+    streamId: string | null;
     time: number;
   }>;
 }

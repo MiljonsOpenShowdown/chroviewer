@@ -35,6 +35,8 @@ export interface LiveExperienceState {
   pendingChatMessageIds: string[];
   playState: LudusPlayState;
   status: LiveStatus;
+  /** The TA replay stream (one play) being shown; '' before the first. */
+  streamId: string;
   viewerCount: number | null;
 }
 
@@ -67,6 +69,11 @@ export interface LiveExperienceOptions {
   externalTimeline?: boolean;
   /** Limits TA live sync to viewers with the same group; unset syncs with every viewer on this origin. */
   taSyncGroup?: string;
+  /**
+   * A TournamentAssistant replay file of the play so far, applied before the
+   * live socket's packets, so a viewer opened midway starts at the live edge.
+   */
+  taCatchupUrl?: string;
   startBarrier?: { id: string; barrier: MultiviewStartBarrier };
   hasLiveMap: (hash: string) => boolean;
   loadLiveReplay: (hash: string, replay: Replay) => Promise<SourceResult<void>>;

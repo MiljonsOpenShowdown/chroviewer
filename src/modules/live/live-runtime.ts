@@ -57,6 +57,8 @@ export interface LiveRuntime {
   streamEnding: boolean;
   /** The play was quit or aborted: playback stops at the end of the received data. */
   streamQuit: boolean;
+  /** Caught-up history was applied: playback starts near the live edge, not at the first frame. */
+  taCatchupStart: boolean;
   streamPaused: boolean;
   taLive: boolean;
   taBufferingStartedAt: number;
@@ -102,6 +104,7 @@ export function createLiveRuntime(target: LiveTarget): LiveRuntime {
     socket: null,
     streamEnding: false,
     streamQuit: false,
+    taCatchupStart: false,
     streamPaused: false,
     taLive: target.source === 'ta' || target.source === 'cocu',
     taBufferingStartedAt: 0,
@@ -144,6 +147,7 @@ export function resetLiveStream(runtime: LiveRuntime) {
   runtime.replay = null;
   runtime.streamEnding = false;
   runtime.streamQuit = false;
+  runtime.taCatchupStart = false;
   runtime.streamPaused = false;
   runtime.taLiveMapHash = '';
   runtime.taBufferingStartedAt = 0;

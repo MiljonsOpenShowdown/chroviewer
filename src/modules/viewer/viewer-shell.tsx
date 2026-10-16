@@ -183,6 +183,8 @@ export interface MultiviewPlaybackSnapshot {
   error: string;
   map: MapMeta | null;
   mapHash: string | null;
+  /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
+  streamId: string | null;
   playbackRate: number;
   seek(time: number): void;
   play(): void;
@@ -214,6 +216,8 @@ interface ViewerShellProps {
 export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   const router = useRouter();
   const routeSearch = useSearch({ from: '/' });
+  // Multiview tiles use the broadcast preset unless their settings say qualityPreset ""
+  const multiviewBroadcast = multiview?.settings?.qualityPreset !== '';
   const search =
     multiview === undefined
       ? routeSearch
@@ -229,8 +233,13 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
           disableGameUI: multiview.disableGameUI,
           hidePlatform: multiview.hidePlatform,
           lights: multiview.lights,
-          qualityPreset: 'broadcast' as const,
-          maxFps: typeof multiview.settings?.maxFps === 'number' ? multiview.settings.maxFps : 60,
+          qualityPreset: multiviewBroadcast ? ('broadcast' as const) : undefined,
+          maxFps:
+            typeof multiview.settings?.maxFps === 'number'
+              ? multiview.settings.maxFps
+              : multiviewBroadcast
+                ? 60
+                : undefined,
         };
   const t = useTranslations('viewer');
   const commonT = useTranslations('common');
@@ -392,8 +401,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   useEffect(() => {
     if (multiview === undefined) return;
     const values = {
-      qualityPreset: 'broadcast',
-      maxFps: 60,
+      ...(multiviewBroadcast ? { qualityPreset: 'broadcast', maxFps: 60 } : {}),
       ...multiview.settings,
       masterVolume: multiview.masterVolume,
       hitsoundVolume: multiview.hitsoundVolume,
@@ -563,6 +571,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     refreshReplayDisplay: session.refreshLiveReplayDisplay,
     externalTimeline: multiview !== undefined,
     taSyncGroup: search.syncGroup,
+    taCatchupUrl: search.catchupUrl,
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
     hasLiveMap: (hash) => sources.hasLiveMap(hash),
     loadLiveReplay: (hash, replay) => {
@@ -856,6 +865,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
       error,
       map: sources.mapMeta,
       mapHash: sources.mapIdentity?.hash ?? null,
+      streamId: multiview.replayUrl === undefined && live.streamId !== '' ? live.streamId : null,
       playbackRate: transport.clockRef.current?.getRate() ?? 1,
       seek: transport.seek,
       play: () => transportRef.current.play(),
@@ -865,6 +875,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   }, [
     error,
     live.status,
+    live.streamId,
     multiview,
     sources.mapIdentity,
     sources.mapMeta,

@@ -4,6 +4,7 @@ import type { Replay } from '../../core/replay/types';
 import {
   ReplayCompletion,
   ReplayStreamPacketSchema,
+  type ReplayStreamPacket,
   type ReplayChunk,
   type ReplayStreamEnd,
   type ReplayStreamStart,
@@ -64,16 +65,13 @@ function applyEnd(replay: Replay, end: ReplayStreamEnd, lastTime: number) {
   replay.combos.push({ combo: end.score.combo, time });
 }
 
-export function parseTaReplayFile(data: Uint8Array): Replay {
+/** Every frame of a TournamentAssistant replay file, in stored order. */
+export function readTaReplayFilePackets(data: Uint8Array): ReplayStreamPacket[] {
   if (!isTaReplayFile(data)) throw new Error('not a TournamentAssistant replay file');
   if (data.byteLength > maxReplayBytes) throw new Error('TournamentAssistant replay file is too large');
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   let offset = TA_REPLAY_FILE_HEADER.byteLength;
-  let start: ReplayStreamStart | undefined;
-  let streamId = '';
-  let end: ReplayStreamEnd | undefined;
-  const chunks: ReplayChunk[] = [];
-
+  const packets: ReplayStreamPacket[] = [];
   while (offset < data.byteLength) {
     if (offset + 4 > data.byteLength) throw new Error('truncated TournamentAssistant replay file');
     const length = view.getUint32(offset, true);
@@ -81,8 +79,19 @@ export function parseTaReplayFile(data: Uint8Array): Replay {
     if (length > maxFrameBytes || offset + length > data.byteLength) {
       throw new Error('truncated TournamentAssistant replay file');
     }
-    const packet = fromBinary(ReplayStreamPacketSchema, data.subarray(offset, offset + length));
+    packets.push(fromBinary(ReplayStreamPacketSchema, data.subarray(offset, offset + length)));
     offset += length;
+  }
+  return packets;
+}
+
+export function parseTaReplayFile(data: Uint8Array): Replay {
+  let start: ReplayStreamStart | undefined;
+  let streamId = '';
+  let end: ReplayStreamEnd | undefined;
+  const chunks: ReplayChunk[] = [];
+
+  for (const packet of readTaReplayFilePackets(data)) {
     // A file holds one play. Frames of any other stream are ignored.
     if (packet.body.case === 'start' && start === undefined) {
       start = packet.body.value;

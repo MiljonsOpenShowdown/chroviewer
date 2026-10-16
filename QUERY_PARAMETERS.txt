@@ -42,6 +42,11 @@ syncGroup=<id>                Only sync with TA viewers given the same id. Witho
                               tabs, so opening the same embedding page in a second tab
                               re-syncs the first. Give each embedding page load its own id
                               (e.g. a random UUID shared by that page's iframes).
+catchupUrl=<HTTPS URL>        A TournamentAssistant replay file ("TAReplayStream v1") of the
+                              play so far, fetched when the viewer opens. It is applied before
+                              the live socket's packets, and playback starts just behind the
+                              live edge, so a viewer opened midway does not wait for new data.
+                              Skipped after 8 seconds or on any error. Needs CORS.
 
 SETTINGS ISOLATION
 isolatedSettings=true         Start from the default settings instead of the ones saved in
@@ -172,4 +177,6 @@ compositorSyncType=slow|wait-for-all
 compositorWaitSeconds=1..60   Default 30 seconds, maximum 60 seconds.
 All visible players must select wait-for-all. Missing or mixed settings default to slow.
 Waiting holds stream playback until the same map hash, difficulty, characteristic and song speed are buffered for every visible player. All clocks are started in one compositor task using a common time reference. A timeout or incompatible map falls back to normal gradual playback. Waiting is only applied at stream startup, never periodically during playback. Replay memory is bounded while waiting and while playing the delayed stream.
-For multiview embeds these values belong in each player's settings object. Slow mode remains the default. Browser, OBS, windowed and Spout bridges all use the same compositor protocol and render host.
+For multiview embeds these values belong in each player's settings object.
+Multiview tiles use the broadcast preset (60 fps, scaled render, no mirrors and
+similar) unless a player's settings set qualityPreset to "" for full quality. Slow mode remains the default. Browser, OBS, windowed and Spout bridges all use the same compositor protocol and render host.
