@@ -194,7 +194,9 @@
         "cube-community-new": "Cube Community",
         "cube-community-v1": "Cube Community V1",
         "default": "Default",
-        "euc": "European Championship"
+        "euc": "European Championship",
+        "ko-circles": "Ko-Circles",
+        "ko-monkey-3": "Ko - Monkey 3"
       },
       "saberBladeLength": "Blade length",
       "saberBladeThickness": "Blade thickness",

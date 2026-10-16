@@ -61,6 +61,8 @@ const MODEL_PATHS: Record<CustomSaberModelId, string> = {
   'cube-community-new': 'cube-community-new.glb',
   'cube-community-v1': 'cube-community-v1.glb',
   euc: 'euc.glb',
+  'ko-circles': 'ko-circles.glb',
+  'ko-monkey-3': 'ko-monkey-3.glb',
 };
 
 const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
@@ -88,6 +90,17 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
     base: 0.504500031,
     tip: 1.004500031,
     texture: 'euc-trail.png',
+  },
+  // Both Ko sabers only trail a few centimeters past the blade tip
+  'ko-circles': {
+    base: 1,
+    tip: 1.034999967,
+    texture: 'ko-circles-trail.png',
+  },
+  'ko-monkey-3': {
+    base: 1,
+    tip: 1.027999997,
+    texture: 'ko-monkey-3-trail.png',
   },
 };
 
