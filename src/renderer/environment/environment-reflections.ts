@@ -24,6 +24,9 @@ import type { EnvironmentData, ObjectReference, ReflectedLightData } from './typ
 const LOCAL_UP = new Vector3(0, 1, 0);
 const LOCAL_FORWARD = new Vector3(0, 0, 1);
 const RAY_EPSILON = 0.001;
+// Moving lasers retrace at most this often; the frames between reuse the last
+// hits, which trail the laser by at most one frame at 60 fps.
+const MIN_RETRACE_INTERVAL_MS = 1000 / 30;
 const inverseParent = new Matrix4();
 const localPosition = new Vector3();
 const localDirection = new Vector3();
@@ -47,6 +50,18 @@ interface ReflectionLight {
 interface ReflectionSource {
   main: ReflectionLight;
   bounces: ReflectionLight[];
+  /** The last traced rays' results, see `apply`. */
+  cache: ReflectionTraceCache;
+}
+
+interface ReflectionTraceCache {
+  /** Collider state the hits were traced against; -1 before the first trace. */
+  colliderVersion: number;
+  origin: Vector3;
+  direction: Vector3;
+  maximumLength: number;
+  /** Hit of each ray in trace order: the main ray, then one per bounce traced. */
+  hits: (ReflectionHit | undefined)[];
 }
 
 interface ReflectionHit {
@@ -211,7 +226,11 @@ function buildReflectionSources(data: EnvironmentData, scene: EnvironmentSceneBu
         light.target.node.visible = false;
         bounces.push(light);
       }
-      sources.push({ main, bounces });
+      sources.push({
+        main,
+        bounces,
+        cache: { colliderVersion: -1, origin: new Vector3(), direction: new Vector3(), maximumLength: 0, hits: [] },
+      });
     }
   }
   return sources;
@@ -261,6 +280,38 @@ export function buildEnvironmentReflections(
   const reflectedDirection = new Vector3();
   const hitColor = new Color();
   const changedNodes = new Set<Object3D>();
+  // Raycasting every laser against every collider each frame is the costliest
+  // part of a frame in environments like Collider (240 reflecting lasers), so
+  // each source keeps its hits until its ray or a collider changes.
+  // Per collider: visibility, then its 16 world matrix elements.
+  const colliderState = new Float64Array(colliders.length * 17).fill(Number.NaN);
+  let colliderVersion = 0;
+  let lastTraceAt = Number.NEGATIVE_INFINITY;
+
+  /** Collects the visible colliders; a new version once any moved or toggled. */
+  function updateColliders() {
+    activeMeshes.length = 0;
+    let changed = false;
+    for (const [index, collider] of colliders.entries()) {
+      const offset = index * 17;
+      const visible = worldVisible(collider.node) ? 1 : 0;
+      if (colliderState[offset] !== visible) {
+        colliderState[offset] = visible;
+        changed = true;
+      }
+      if (visible === 0) continue;
+      const elements = collider.node.matrixWorld.elements;
+      for (let i = 0; i < 16; i += 1) {
+        if (colliderState[offset + 1 + i] !== elements[i]) {
+          colliderState[offset + 1 + i] = elements[i] ?? 0;
+          changed = true;
+        }
+      }
+      collider.mesh.matrixWorld.copy(collider.node.matrixWorld);
+      activeMeshes.push(collider.mesh);
+    }
+    if (changed) colliderVersion += 1;
+  }
 
   function trace(rayOrigin: Vector3, rayDirection: Vector3, maximumDistance: number): ReflectionHit | undefined {
     raycaster.far = maximumDistance;
@@ -292,12 +343,10 @@ export function buildEnvironmentReflections(
 
   function apply(segments: EnvironmentLightSegment[]) {
     changedNodes.clear();
-    activeMeshes.length = 0;
-    for (const collider of colliders) {
-      if (!worldVisible(collider.node)) continue;
-      collider.mesh.matrixWorld.copy(collider.node.matrixWorld);
-      activeMeshes.push(collider.mesh);
-    }
+    updateColliders();
+    const now = performance.now();
+    const throttled = now - lastTraceAt < MIN_RETRACE_INTERVAL_MS;
+    let traced = false;
     for (const source of sources) {
       const mainOutput = segments[source.main.outputIndex];
       if (mainOutput === undefined) continue;
@@ -309,7 +358,25 @@ export function buildEnvironmentReflections(
       }
       source.main.target.node.getWorldPosition(origin);
       direction.copy(LOCAL_UP).transformDirection(source.main.target.node.matrixWorld);
-      let hit = trace(origin, direction, maximumLength);
+      // The same ray against the same colliders hits the same as last time.
+      // A changed ray reuses its last hits too until the retrace interval is up,
+      // unless it was never traced.
+      const cache = source.cache;
+      const unchanged =
+        cache.colliderVersion === colliderVersion &&
+        cache.maximumLength === maximumLength &&
+        cache.origin.equals(origin) &&
+        cache.direction.equals(direction);
+      const tracedHits: (ReflectionHit | undefined)[] | undefined =
+        unchanged || (throttled && cache.colliderVersion !== -1) ? undefined : [];
+      let traceIndex = 0;
+      const traceRay = (rayOrigin: Vector3, rayDirection: Vector3, rayMaximum: number) => {
+        if (tracedHits === undefined) return cache.hits[traceIndex++];
+        const result = trace(rayOrigin, rayDirection, rayMaximum);
+        tracedHits.push(result);
+        return result;
+      };
+      let hit = traceRay(origin, direction, maximumLength);
       const mainLength = hit?.distance ?? maximumLength;
       setReflectedSegment(
         source.main,
@@ -341,7 +408,7 @@ export function buildEnvironmentReflections(
         bounceOutput.alpha = mainOutput.alpha;
         const bounceMaximum = remainingLength;
         const rayOrigin = bounceOrigin.clone().addScaledVector(reflectedDirection, RAY_EPSILON);
-        hit = trace(rayOrigin, reflectedDirection, bounceMaximum);
+        hit = traceRay(rayOrigin, reflectedDirection, bounceMaximum);
         const bounceLength = Math.min(
           (hit?.distance ?? bounceMaximum) + (hit === undefined ? 0 : RAY_EPSILON),
           bounceMaximum,
@@ -355,7 +422,16 @@ export function buildEnvironmentReflections(
         bounceOrigin = hit?.point;
         if (hit !== undefined) reflectedDirection.reflect(hit.normal).normalize();
       }
+      if (tracedHits !== undefined) {
+        cache.colliderVersion = colliderVersion;
+        cache.origin.copy(origin);
+        cache.direction.copy(direction);
+        cache.maximumLength = maximumLength;
+        cache.hits = tracedHits;
+        traced = true;
+      }
     }
+    if (traced) lastTraceAt = now;
     updateChangedSubtrees(changedNodes);
   }
 

@@ -1,4 +1,4 @@
-import { Color, MathUtils, ShaderMaterial, Vector3, type Object3D } from 'three';
+import { Color, MathUtils, ShaderMaterial, Vector3, type IUniform, type Object3D } from 'three';
 
 import type { PointSampleContext } from '../../core/animation/point-definition';
 import { createBpmConverter, songBpmTimeToSeconds } from '../../core/beatmap/bpm';
@@ -53,6 +53,35 @@ interface GlsColorRuntime {
   }[];
 }
 
+/** A material's light uniforms, looked up once instead of by name every frame. */
+interface MaterialLightUniforms {
+  color?: IUniform<Color>;
+  alpha?: IUniform<number>;
+  multiplier?: IUniform<number>;
+}
+
+const alphaUniformNames = new Map<string, string>();
+
+function alphaUniformName(colorProperty: string) {
+  let name = alphaUniformNames.get(colorProperty);
+  if (name === undefined) {
+    name = `${colorProperty}Alpha`;
+    alphaUniformNames.set(colorProperty, name);
+  }
+  return name;
+}
+
+// Most lights hold their value between frames, so unchanged uniforms are left alone
+function writeColorUniform(uniform: IUniform<Color> | undefined, color: Rgb) {
+  const value = uniform?.value;
+  if (value === undefined || (value.r === color[0] && value.g === color[1] && value.b === color[2])) return;
+  value.setRGB(color[0], color[1], color[2]);
+}
+
+function writeNumberUniform(uniform: IUniform<number> | undefined, value: number) {
+  if (uniform !== undefined && uniform.value !== value) uniform.value = value;
+}
+
 interface ControlledLight {
   color: Rgb;
   alpha: number;
@@ -103,6 +132,7 @@ export class EnvironmentLightRuntime {
   private readonly transforms = new EnvironmentTransformRuntime();
   private readonly chromaTracks = new ChromaTrackRuntime();
   private readonly glsSegments = new Map<EnvironmentLightSegment, ControlledLight>();
+  private readonly materialUniforms = new WeakMap<ShaderMaterial, Map<string, MaterialLightUniforms>>();
   private readonly glsMaterialLights = new Map<LoadedEnvironment['materialLights'][number], ControlledLight>();
   private readonly glsColorSamples = new Map<GlsColorSource, ReturnType<typeof sampleGlsColorTween>>();
   private readonly glsDirectMaterials = new Map<
@@ -412,6 +442,8 @@ export class EnvironmentLightRuntime {
   private updateMaterialLights(beat: number, boosted: boolean, songBpm: number) {
     const environment = this.environment;
     if (environment === null) return;
+    // Runs for every light material of every tile each frame (thousands in V3
+    // environments like Collider), so it avoids per-material lookups and objects.
     for (const light of environment.materialLights) {
       const gls = this.glsMaterialLights.get(light);
       const sampled =
@@ -420,47 +452,59 @@ export class EnvironmentLightRuntime {
           ? this.sampleEnvironmentLight(light.bindings, beat, boosted, songBpm)
           : this.sampleCombinedMaterialLight(light.combined, beat, boosted, songBpm));
       if (sampled === null) continue;
-      let controlled: ControlledLight;
-      if (gls === undefined) {
-        controlled = light.transform?.(sampled.color, sampled.alpha) ?? {
-          color: sampled.color,
-          alpha: Math.max(sampled.alpha * light.intensityMultiplier, light.minimumAlpha ?? 0),
-          visible: true,
-        };
+      let color: Rgb;
+      let alpha: number;
+      let visible: boolean;
+      const transformed = gls === undefined ? light.transform?.(sampled.color, sampled.alpha) : undefined;
+      if (transformed !== undefined) {
+        color = transformed.color;
+        alpha = transformed.alpha;
+        visible = transformed.visible ?? true;
       } else {
-        controlled = {
-          ...gls,
-          alpha: Math.max(gls.alpha * light.intensityMultiplier, light.minimumAlpha ?? 0),
-        };
+        color = sampled.color;
+        alpha = Math.max(sampled.alpha * light.intensityMultiplier, light.minimumAlpha ?? 0);
+        visible = gls?.visible ?? true;
       }
       if (light.node !== undefined) {
-        light.node.visible = light.initialVisible !== false && (controlled.visible ?? true);
+        light.node.visible = light.initialVisible !== false && visible;
       }
       light.applyAlpha?.(sampled.rawAlpha ?? sampled.alpha);
       const colorProperty = light.colorProperty ?? '_Color';
+      const setColor = light.combined?.setAlphaOnly !== true;
+      const setAlpha = light.combined?.setColorOnly !== true;
       for (const material of light.materials) {
-        const color = shaderColorUniform(material, colorProperty);
-        if (color !== undefined && light.combined?.setAlphaOnly !== true) {
-          this.setControlledMaterialColor(color, controlled.color);
+        const uniforms = this.materialLightUniforms(material, colorProperty);
+        if (setColor) writeColorUniform(uniforms.color, color);
+        if (setAlpha) {
+          writeNumberUniform(uniforms.alpha, alpha);
+          writeNumberUniform(uniforms.multiplier, alpha);
         }
-        const alpha = material.uniforms[`${colorProperty}Alpha`];
-        if (alpha !== undefined && light.combined?.setColorOnly !== true) alpha.value = controlled.alpha;
-        const multiplier = material.uniforms._ColorMultiplier;
-        if (multiplier !== undefined && light.combined?.setColorOnly !== true) multiplier.value = controlled.alpha;
       }
     }
     for (const [material, { controlled, colorProperty }] of this.glsDirectMaterials) {
-      const color = shaderColorUniform(material, colorProperty);
-      if (color !== undefined) this.setControlledMaterialColor(color, controlled.color);
-      const alpha = material.uniforms[`${colorProperty}Alpha`];
-      if (alpha !== undefined) alpha.value = controlled.alpha;
-      const multiplier = material.uniforms._ColorMultiplier;
-      if (multiplier !== undefined) multiplier.value = controlled.alpha;
+      const uniforms = this.materialLightUniforms(material, colorProperty);
+      writeColorUniform(uniforms.color, controlled.color);
+      writeNumberUniform(uniforms.alpha, controlled.alpha);
+      writeNumberUniform(uniforms.multiplier, controlled.alpha);
     }
   }
 
-  private setControlledMaterialColor(target: Color, color: Rgb) {
-    target.setRGB(...color);
+  private materialLightUniforms(material: ShaderMaterial, colorProperty: string) {
+    let byProperty = this.materialUniforms.get(material);
+    if (byProperty === undefined) {
+      byProperty = new Map();
+      this.materialUniforms.set(material, byProperty);
+    }
+    let uniforms = byProperty.get(colorProperty);
+    if (uniforms === undefined) {
+      uniforms = {};
+      byProperty.set(colorProperty, uniforms);
+    }
+    // GLS FX can add a missing uniform later, so missing ones are looked up again
+    uniforms.color ??= material.uniforms[colorProperty];
+    uniforms.alpha ??= material.uniforms[alphaUniformName(colorProperty)];
+    uniforms.multiplier ??= material.uniforms._ColorMultiplier;
+    return uniforms;
   }
 
   private sampleCombinedMaterialLight(
