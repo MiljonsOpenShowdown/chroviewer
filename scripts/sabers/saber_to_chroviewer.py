@@ -11,20 +11,29 @@ Next to each .saber it writes a folder laid out like public/sabers/:
 
 GLB layout the loader expects:
 - nodes named Left__<object>__<material>__<index> or Right__..., vertices baked
-  into the LeftSaber/RightSaber space, x mirrored (Unity is left-handed). Checked
-  against the existing euc.glb: identical triangles and winding.
+  into the LeftSaber/RightSaber space, x mirrored (Unity is left-handed)
 - materials named <material>::<role>, role from the Unity material:
   custom-glow / static-glow / custom-surface / surface
 - parts sharing a side and material merge into one mesh (one draw call each)
 
-The trail texture is the trail material's _AlphaTex (else its first texture),
-saved unchanged. Saber animations and special shaders (e.g. fire trail
-displacement) are not converted.
+Material roles: _CustomColors (or, when missing, any shader but the "(No CC)"
+variants) uses the player's colors; _Glow or _Bloom above 0 glows. Disabled
+objects and non-glowing distortion effects are skipped. Unity's built-in cube,
+cylinder, sphere, quad and plane (not stored in the .saber) are generated;
+built-in materials become plain white. The trail texture is the trail material's
+_AlphaTex (else its first texture), saved unchanged. Saber animations and
+special shaders (e.g. fire trail displacement) are not converted.
+
+Checked against euc, cg5, beatkhana and cube-community-new: identical parts,
+roles, triangles and winding (cube-community-v1.glb additionally contains its
+disabled LeftSaberMesh/RightSaberMesh).
 
 Build the exe (any venv):
     pip install UnityPy trimesh numpy pyinstaller
     pyinstaller --onefile --name SaberToChroViewer --collect-all UnityPy
-        --collect-all trimesh scripts/sabers/saber_to_chroviewer.py
+        --collect-all trimesh --collect-all fmod_toolkit --collect-all archspec
+        scripts/sabers/saber_to_chroviewer.py
+(UnityPy loads FMOD on import, so fmod_toolkit's DLL has to be bundled.)
 """
 
 import os
@@ -83,12 +92,109 @@ def role(material):
         # Without the property, the Beat Saber glow shaders use the player's
         # colors unless they are the "(No CC)" variants (checked on CG5)
         custom = 'No CC' not in shader_name(material)
-    glow = floats.get('_Glow', 0) > 0
+    # Bloom alone also makes a part glow (BeatKhana's Unlit Wave medallion)
+    glow = floats.get('_Glow', 0) > 0 or floats.get('_Bloom', 0) > 0
     if custom and glow:
         return 'custom-glow'
     if glow:
         return 'static-glow'
     return 'custom-surface' if custom else 'surface'
+
+
+# Unity's built-in meshes and materials live in its "unity default resources",
+# not in the .saber; sabers made with them only point there by id.
+BUILTIN_MESH_NAMES = {
+    10202: 'Cube',
+    10206: 'Cylinder',
+    10207: 'Sphere',
+    10209: 'Plane',
+    10210: 'Quad',
+}
+
+
+def oriented(vertices, normals, faces):
+    """Faces wound counter-clockwise around their vertex normals, like the
+    meshes in a .saber (the converter's mirror and flip then keep them outward)."""
+    a, b, c = (vertices[faces[:, i]] for i in range(3))
+    face_normals = np.cross(b - a, c - a)
+    flip = np.sum(face_normals * normals[faces].mean(axis=1), axis=1) < 0
+    faces = faces.copy()
+    faces[flip] = faces[flip][:, ::-1]
+    return faces
+
+
+def builtin_mesh(path_id, segments=24, rings=16):
+    """(vertices, normals, uvs, [faces]) of a Unity built-in mesh, in its
+    dimensions: 1 m cube, sphere and quad, a cylinder 1 m wide and 2 m tall
+    along y, a 10 m plane facing +y. None for others (e.g. the capsule)."""
+    vertices, normals, uvs, faces = [], [], [], []
+
+    def add(position, normal, uv):
+        vertices.append(np.asarray(position, dtype=np.float64))
+        normals.append(np.asarray(normal, dtype=np.float64))
+        uvs.append(uv)
+        return len(vertices) - 1
+
+    name = BUILTIN_MESH_NAMES.get(path_id)
+    if name == 'Cube':
+        for axis in range(3):
+            for sign in (-1, 1):
+                normal = np.zeros(3)
+                normal[axis] = sign
+                u, v = [i for i in range(3) if i != axis]
+                corners = []
+                for du, dv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                    position = normal * 0.5
+                    position[u] = du * 0.5
+                    position[v] = dv * 0.5
+                    corners.append(add(position, normal, ((du + 1) / 2, (dv + 1) / 2)))
+                faces += [(corners[0], corners[1], corners[2]), (corners[0], corners[2], corners[3])]
+    elif name == 'Cylinder':
+        for i in range(segments + 1):
+            angle = 2 * np.pi * i / segments
+            radial = np.array([np.cos(angle), 0, np.sin(angle)])
+            bottom = add(radial * 0.5 + [0, -1, 0], radial, (i / segments, 0))
+            top = add(radial * 0.5 + [0, 1, 0], radial, (i / segments, 1))
+            if i:
+                faces += [(bottom - 2, top - 2, bottom), (bottom, top - 2, top)]
+        for y in (-1, 1):
+            normal = np.array([0, y, 0])
+            center = add([0, y, 0], normal, (0.5, 0.5))
+            ring = [
+                add([0.5 * np.cos(a), y, 0.5 * np.sin(a)], normal, (0.5 + 0.5 * np.cos(a), 0.5 + 0.5 * np.sin(a)))
+                for a in np.linspace(0, 2 * np.pi, segments + 1)
+            ]
+            faces += [(center, ring[i], ring[i + 1]) for i in range(segments)]
+    elif name == 'Sphere':
+        grid = []
+        for r in range(rings + 1):
+            theta = np.pi * r / rings
+            grid.append([])
+            for i in range(segments + 1):
+                phi = 2 * np.pi * i / segments
+                normal = np.array([np.sin(theta) * np.cos(phi), np.cos(theta), np.sin(theta) * np.sin(phi)])
+                grid[-1].append(add(normal * 0.5, normal, (i / segments, 1 - r / rings)))
+        for r in range(rings):
+            for i in range(segments):
+                a, b, c, d = grid[r][i], grid[r][i + 1], grid[r + 1][i], grid[r + 1][i + 1]
+                if r:
+                    faces.append((a, b, c))
+                if r < rings - 1:
+                    faces.append((b, d, c))
+    elif name in ('Quad', 'Plane'):
+        half = 0.5 if name == 'Quad' else 5.0
+        normal = np.array([0, 0, -1]) if name == 'Quad' else np.array([0, 1, 0])
+        corners = []
+        for du, dv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            position = [du * half, dv * half, 0] if name == 'Quad' else [du * half, 0, dv * half]
+            corners.append(add(position, normal, ((du + 1) / 2, (dv + 1) / 2)))
+        faces += [(corners[0], corners[1], corners[2]), (corners[0], corners[2], corners[3])]
+    else:
+        return None
+    vertices = np.array(vertices)
+    normals = np.array(normals)
+    faces = oriented(vertices, normals, np.array(faces, dtype=np.int64))
+    return vertices, normals, np.array(uvs, dtype=np.float64), [faces]
 
 
 def slug(name):
@@ -128,8 +234,16 @@ def convert(source):
     materials = {}
     parts = {}
 
-    def emit(side, object_name, mesh, renderer, matrix):
-        handler = MeshHandler(mesh)
+    warnings = []
+
+    def mesh_geometry(object_name, pointer):
+        """(vertices, normals, uvs, [faces per submesh]), or None to skip."""
+        if pointer.file_id != 0:
+            geometry = builtin_mesh(pointer.path_id)
+            if geometry is None:
+                warnings.append(f'{object_name}: skipped, its built-in Unity mesh ({pointer.path_id}) is not supported.')
+            return geometry
+        handler = MeshHandler(pointer.read())
         handler.process()
         count = handler.m_VertexCount
 
@@ -141,9 +255,31 @@ def convert(source):
 
         vertices = channel(handler.m_Vertices, 3)
         if vertices is None:
-            return
-        normals = channel(handler.m_Normals, 3)
-        uvs = channel(handler.m_UV0, 2)
+            return None
+        faces = [np.array(t, dtype=np.int64).reshape(-1, 3) for t in handler.get_triangles()]
+        return vertices, channel(handler.m_Normals, 3), channel(handler.m_UV0, 2), faces
+
+    def material_entry(object_name, pointer):
+        """(key, role, base color) of a renderer's material, or None to skip it."""
+        if pointer.file_id != 0:
+            # Unity's built-in default material: plain white, lit
+            if 'Default-Material' not in materials:
+                warnings.append(f'{object_name}: uses a built-in Unity material, converted as plain white.')
+            return 'Default-Material', 'surface', [1.0, 1.0, 1.0, 1.0]
+        unity_material = pointer.read()
+        floats, colors, _ = props(unity_material)
+        # A distortion shader only bends what is behind it; drawn as a surface
+        # it would be an opaque box (ACC's "Grunge Glow")
+        no_glow = floats.get('_Glow', 0) <= 0 and floats.get('_Bloom', 0) <= 0
+        if no_glow and 'distortion' in shader_name(unity_material).lower():
+            warnings.append(f'{object_name}: skipped "{unity_material.m_Name}", a distortion effect.')
+            return None
+        color = colors.get('_Color')
+        base = [color.r, color.g, color.b, 1.0] if color is not None else [0.8, 0.8, 0.8, 1.0]
+        return unity_material.m_Name, role(unity_material), base
+
+    def emit(side, object_name, geometry, renderer, matrix):
+        vertices, normals, uvs, submeshes = geometry
         world = (matrix[:3, :3] @ vertices.T).T + matrix[:3, 3]
         if normals is not None:
             normals = (np.linalg.inv(matrix[:3, :3]).T @ normals.T).T
@@ -152,23 +288,25 @@ def convert(source):
         world[:, 0] *= -1
         if normals is not None:
             normals[:, 0] *= -1
-        for index, triangles in enumerate(handler.get_triangles()):
+        for index, faces in enumerate(submeshes):
             if index >= len(renderer.m_Materials) or not renderer.m_Materials[index].path_id:
                 continue
-            unity_material = renderer.m_Materials[index].read()
-            faces = np.array(triangles, dtype=np.int64).reshape(-1, 3)[:, ::-1]
+            entry = material_entry(object_name, renderer.m_Materials[index])
+            if entry is None:
+                continue
+            key, material_role, base = entry
+            # The x mirror reverses the winding; so does a transform that mirrors
+            # (negative scale), which Unity compensates for when rendering
+            if np.linalg.det(matrix[:3, :3]) > 0:
+                faces = faces[:, ::-1]
             if len(faces) == 0:
                 continue
             used = np.unique(faces)
             remap = -np.ones(len(world), dtype=np.int64)
             remap[used] = np.arange(len(used))
-            key = unity_material.m_Name
             if key not in materials:
-                _, colors, _ = props(unity_material)
-                color = colors.get('_Color')
-                base = [color.r, color.g, color.b, 1.0] if color is not None else [0.8, 0.8, 0.8, 1.0]
                 materials[key] = trimesh.visual.material.PBRMaterial(
-                    name=f'{key}::{role(unity_material)}',
+                    name=f'{key}::{material_role}',
                     baseColorFactor=base,
                     metallicFactor=0.2,
                     roughnessFactor=0.55,
@@ -199,7 +337,9 @@ def convert(source):
             elif kind == 'MeshRenderer' and obj.m_Enabled:
                 renderer = obj
         if mesh_filter is not None and renderer is not None and mesh_filter.m_Mesh.path_id:
-            emit(side, game_object.m_Name, mesh_filter.m_Mesh.read(), renderer, matrix)
+            geometry = mesh_geometry(game_object.m_Name, mesh_filter.m_Mesh)
+            if geometry is not None:
+                emit(side, game_object.m_Name, geometry, renderer, matrix)
         for child in transform.m_Children:
             child_transform = child.read()
             walk(side, child_transform, matrix @ trs(child_transform))
@@ -241,7 +381,9 @@ def convert(source):
                 zs.append(saber_z(transforms[pointer]))
         if len(zs) == 2:
             base, tip = min(zs), max(zs)
-        material_pointer = (trail.get('TrailMaterial') or {}).get('m_PathID')
+        # Only a material in the .saber; a built-in one has no trail texture
+        material_ref = trail.get('TrailMaterial') or {}
+        material_pointer = material_ref.get('m_PathID') if material_ref.get('m_FileID', 0) == 0 else None
         trail_material = next(
             (o.read() for o in env.objects if o.path_id == material_pointer and o.type.name == 'Material'), None
         )
@@ -249,7 +391,7 @@ def convert(source):
             _, _, slots = props(trail_material)
             ordered = [slots[s] for s in TRAIL_TEXTURE_SLOTS if s in slots] + list(slots.values())
             for slot in ordered:
-                if slot.m_Texture and slot.m_Texture.path_id:
+                if slot.m_Texture and slot.m_Texture.path_id and slot.m_Texture.file_id == 0:
                     trail_texture = slot.m_Texture.read().image
                     break
 
@@ -259,7 +401,6 @@ def convert(source):
     glb_path = os.path.join(out_dir, 'models', f'{model_id}.glb')
     scene.export(glb_path)
     texture_path = os.path.join(out_dir, 'textures', f'{model_id}-trail.png')
-    warnings = []
     if trail_texture is None:
         # A plain white trail rather than a missing file
         trail_texture = Image.new('RGBA', (64, 64), (255, 255, 255, 255))
@@ -294,7 +435,8 @@ def convert(source):
 5. Use it: saberModel '{model_id}' (overlay-defaults.ts, or MOS tile/URL settings)
 """
     if warnings:
-        entries += '\nWarnings:\n' + '\n'.join(f'- {w}' for w in warnings) + '\n'
+        # One per saber side otherwise
+        entries += '\nWarnings:\n' + '\n'.join(f'- {w}' for w in dict.fromkeys(warnings)) + '\n'
     with open(os.path.join(out_dir, 'chroviewer-entries.txt'), 'w', encoding='utf-8') as file:
         file.write(entries)
     return out_dir, entries, [m.name for m in materials.values()]

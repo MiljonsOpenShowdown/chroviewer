@@ -115,6 +115,7 @@ export const replaySaberModelIds = [
   'euc',
   'ko-circles',
   'ko-monkey-3',
+  'acc-saber',
 ] as const;
 
 export type ReplaySaberModelId = (typeof replaySaberModelIds)[number];

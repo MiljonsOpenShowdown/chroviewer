@@ -196,7 +196,8 @@
         "default": "Default",
         "euc": "European Championship",
         "ko-circles": "Ko-Circles",
-        "ko-monkey-3": "Ko - Monkey 3"
+        "ko-monkey-3": "Ko - Monkey 3",
+        "acc-saber": "Acc Saber"
       },
       "saberBladeLength": "Blade length",
       "saberBladeThickness": "Blade thickness",

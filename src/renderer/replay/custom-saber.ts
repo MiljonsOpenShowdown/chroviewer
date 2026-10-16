@@ -63,6 +63,7 @@ const MODEL_PATHS: Record<CustomSaberModelId, string> = {
   euc: 'euc.glb',
   'ko-circles': 'ko-circles.glb',
   'ko-monkey-3': 'ko-monkey-3.glb',
+  'acc-saber': 'acc-saber.glb',
 };
 
 const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
@@ -101,6 +102,11 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
     base: 1,
     tip: 1.027999997,
     texture: 'ko-monkey-3-trail.png',
+  },
+  'acc-saber': {
+    base: 0.867999971,
+    tip: 1.02100003,
+    texture: 'acc-saber-trail.png',
   },
 };
 
