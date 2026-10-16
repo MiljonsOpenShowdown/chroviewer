@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 
 import { BeatmapParser } from '../../core/beatmap/worker/client';
 import { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
@@ -6,7 +6,7 @@ import { broadcastSettingsForPlayerCount } from '../../renderer/render-performan
 import { fetchBeatSaverHash } from '../../sources/beatsaver/provider';
 import { EmbeddedRealtimeScoreTimeline } from '../live/embedded-realtime-score-sync';
 import { LiveMapCache } from '../live/live-map-cache';
-import { ViewerShell, type MultiviewPlaybackSnapshot } from '../viewer/viewer-shell';
+import type { MultiviewPlaybackSnapshot, MultiviewTileProps } from '../viewer/viewer-embed-types';
 import type {
   MultiviewConfigMessage,
   MultiviewControlMessage,
@@ -114,7 +114,27 @@ function waitingLabel(player: MultiviewPlayerConfig, playback: TilePlaybackState
   }
 }
 
-export function MultiviewShell() {
+/** Player fields a route fills in when a config message leaves them out. */
+export type MultiviewPlayerDefaults = Partial<Omit<MultiviewPlayerConfig, 'settings'>> & {
+  settings?: MultiviewPlayerConfig['settings'];
+};
+
+function withDefaults(value: unknown, defaults: MultiviewPlayerDefaults | undefined) {
+  if (defaults === undefined || !isRecord(value)) return value;
+  return {
+    ...defaults,
+    ...value,
+    settings: { ...defaults.settings, ...(isRecord(value.settings) ? value.settings : {}) },
+  };
+}
+
+interface MultiviewShellProps {
+  /** Renders each tile; the full viewer or the lighter overlay shell. */
+  Tile: ComponentType<MultiviewTileProps>;
+  playerDefaults?: MultiviewPlayerDefaults;
+}
+
+export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [host, setHost] = useState<MultiviewRendererHost | null>(null);
   const [parser, setParser] = useState<BeatmapParser | null>(null);
@@ -157,13 +177,10 @@ export function MultiviewShell() {
   useEffect(() => {
     function applyConfig(data: unknown) {
       if (!isRecord(data) || data.type !== 'beatkhana:multiview-config' || data.version !== 1) return;
-      const next = (data as unknown as MultiviewConfigMessage).players;
-      if (
-        !Array.isArray(next) ||
-        next.length > 12 ||
-        !next.every(validPlayer) ||
-        new Set(next.map((player) => player.id)).size !== next.length
-      )
+      const raw: unknown = (data as unknown as MultiviewConfigMessage).players;
+      if (!Array.isArray(raw)) return;
+      const next = raw.map((player: unknown) => withDefaults(player, playerDefaults));
+      if (next.length > 12 || !next.every(validPlayer) || new Set(next.map((player) => player.id)).size !== next.length)
         return;
       for (const player of next) {
         let scoreTimeline = scoreTimelinesRef.current.get(player.id);
@@ -243,7 +260,7 @@ export function MultiviewShell() {
     window.addEventListener('message', receive);
     window.parent.postMessage({ type: 'beatkhana:multiview-ready', version: 1 }, '*');
     return () => window.removeEventListener('message', receive);
-  }, [mapCache, nativeBridge, startBarrier, timeline]);
+  }, [mapCache, nativeBridge, playerDefaults, startBarrier, timeline]);
 
   useEffect(() => {
     if (host === null) return;
@@ -466,7 +483,7 @@ export function MultiviewShell() {
       {host !== null &&
         parser !== null &&
         runtimePlayers.map((player) => (
-          <ViewerShell
+          <Tile
             // A new recording remounts the tile so its sources load from scratch.
             key={`${player.id}:${player.replayUrl ?? ''}`}
             multiview={{

@@ -9,6 +9,6 @@ export const Route = createLazyFileRoute('/')({
 
 function ViewerRoute() {
   const search = useSearch({ from: '/' });
-  if (search.multiview === true) return <MultiviewShell />;
+  if (search.multiview === true) return <MultiviewShell Tile={ViewerShell} />;
   return <ViewerShell key={search.party === undefined ? 'viewer' : `party:${search.party}`} />;
 }

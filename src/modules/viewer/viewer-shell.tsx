@@ -15,28 +15,17 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import type { BeatmapParser } from '../../core/beatmap/worker/client';
 import { isForcedLightshowMode, type LightshowMode } from '../../core/lighting/basic-light';
-import { hsvPresets } from '../../core/replay/hsv-presets';
-import {
-  DEFAULT_VIEWER_SETTINGS,
-  defaultViewerSettings,
-  loadViewerSettings,
-  sanitizeViewerSettings,
-} from '../../core/viewer-settings';
+import { defaultViewerSettings, loadViewerSettings, sanitizeViewerSettings } from '../../core/viewer-settings';
 import { environmentCatalog } from '../../renderer/environment/environment-catalog';
-import type { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
 import { useLightshowShowcase } from '../lightshow-showcase/use-lightshow-showcase';
 import { EmbeddedRealtimeScoreTimeline, isEmbeddedRealtimeScoreMessage } from '../live/embedded-realtime-score-sync';
 import { LudusPlayState } from '../live/generated/proto/scoresaber/live/v1/common_pb';
-import type { LiveMapCache } from '../live/live-map-cache';
 import { replayLightshowMode } from '../live/live-replay';
 import type { LiveStatus, LiveTarget } from '../live/live-types';
 import { LiveViewerPanel } from '../live/live-viewer-panel';
 import { useLiveExperience } from '../live/use-live-experience';
 import { useMapPoolShowcase } from '../map-pool-showcase/use-map-pool-showcase';
-import type { MultiviewStartBarrier } from '../multiview/multiview-start-barrier';
-import type { MultiviewTimeline } from '../multiview/multiview-timeline';
 import { ReplayPlayerCard } from '../replay/replay-player-card';
 import { SettingsDrawer } from '../settings/settings-drawer';
 import { useWatchPartyExperience } from '../watch-party/use-watch-party-experience';
@@ -60,6 +49,8 @@ import { useViewerControls } from './use-viewer-controls';
 import { useViewerSession } from './use-viewer-session';
 import { useViewerShare } from './use-viewer-share';
 import { useViewerSources } from './use-viewer-sources';
+import { dynamicLocationValues, dynamicSettingsPatch, initialViewerSettings } from './viewer-embed-settings';
+import type { MultiviewTileOptions } from './viewer-embed-types';
 import {
   hasExternallyConfiguredSettings,
   hasConfiguredPoolShowcase,
@@ -70,7 +61,6 @@ import {
 } from './viewer-search';
 import { quantizedBeatAt } from './viewer-timeline';
 import type { ViewerPanel } from './viewer-types';
-import type { MapMeta } from './viewer-types';
 
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -79,85 +69,6 @@ import { cn } from '@/lib/utils';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function dynamicSettingsPatch(values: Record<string, unknown>) {
-  const performanceKeys = new Set([
-    'qualityPreset',
-    'maxFps',
-    'msaaSamples',
-    'mirrorQuality',
-    'mirrorResolution',
-    'mirrorMsaaSamples',
-    'postBloomWidth',
-    'bloomFogSize',
-    'outputWidth',
-    'outputHeight',
-    'screenDisplacement',
-    // Keep the legacy query parameter live without rebuilding the entire scene.
-    // It now controls only the mirror target, just like mirrorQuality.
-    'graphicsQuality',
-  ]);
-  const patch = Object.fromEntries(Object.entries(values).filter(([key]) => !performanceKeys.has(key)));
-  return {
-    ...(values.qualityPreset === '' || values.qualityPreset === null
-      ? {
-          renderScale: DEFAULT_VIEWER_SETTINGS.renderScale,
-          replayTrailSamples: DEFAULT_VIEWER_SETTINGS.replayTrailSamples,
-          screenDisplacementEffects: DEFAULT_VIEWER_SETTINGS.screenDisplacementEffects,
-        }
-      : {}),
-    ...(values.qualityPreset === 'broadcast'
-      ? { renderScale: 0.85, replayTrailSamples: 12, screenDisplacementEffects: false }
-      : {}),
-    ...(typeof values.customColors === 'boolean' && values.customEnvironmentColors === undefined
-      ? { customEnvironmentColors: values.customColors }
-      : {}),
-    ...(typeof values.preferReplayColors === 'boolean' && values.preferReplayEnvironmentColors === undefined
-      ? { preferReplayEnvironmentColors: values.preferReplayColors }
-      : {}),
-    ...patch,
-    ...('screenDisplacement' in values ? { screenDisplacementEffects: values.screenDisplacement } : {}),
-  };
-}
-
-function dynamicLocationValues() {
-  const values: Record<string, unknown> = {};
-  const settingKeys = new Map(Object.keys(DEFAULT_VIEWER_SETTINGS).map((key) => [key.toLowerCase(), key]));
-  const performanceKeys = new Map(
-    [
-      'qualityPreset',
-      'maxFps',
-      'msaaSamples',
-      'mirrorQuality',
-      'mirrorResolution',
-      'mirrorMsaaSamples',
-      'postBloomWidth',
-      'bloomFogSize',
-      'outputWidth',
-      'outputHeight',
-      'screenDisplacement',
-    ].map((key) => [key.toLowerCase(), key]),
-  );
-  const aliases = new Map([
-    ['camera', 'replayCamera'],
-    ['fov', 'replayCameraFov'],
-  ]);
-  for (const [rawKey, rawValue] of new URLSearchParams(window.location.search)) {
-    const lower = rawKey.toLowerCase();
-    const key = performanceKeys.get(lower) ?? settingKeys.get(lower) ?? aliases.get(lower);
-    if (key === undefined) continue;
-    const defaultValue = DEFAULT_VIEWER_SETTINGS[key as keyof typeof DEFAULT_VIEWER_SETTINGS];
-    values[key] =
-      key === 'screenDisplacement'
-        ? rawValue.toLowerCase() === 'true'
-        : typeof defaultValue === 'number'
-          ? Number(rawValue)
-          : typeof defaultValue === 'boolean'
-            ? rawValue.toLowerCase() === 'true'
-            : rawValue;
-  }
-  return values;
 }
 
 function replaceDynamicLocation(values: Record<string, unknown>) {
@@ -172,45 +83,10 @@ function replaceDynamicLocation(values: Record<string, unknown>) {
   window.history.replaceState(window.history.state, '', url);
 }
 
-export interface MultiviewPlaybackSnapshot {
-  playerId: string;
-  time: number;
-  duration: number;
-  beat: number;
-  bpm: number;
-  playing: boolean;
-  status: LiveStatus;
-  error: string;
-  map: MapMeta | null;
-  mapHash: string | null;
-  /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
-  streamId: string | null;
-  playbackRate: number;
-  seek(time: number): void;
-  play(): void;
-  pause(): void;
-  correctDrift(time: number): void;
-}
+export type { MultiviewPlaybackSnapshot } from './viewer-embed-types';
 
 interface ViewerShellProps {
-  multiview?: {
-    id: string;
-    playerId: string;
-    /** Recorded replay to play instead of the player's live TA stream. */
-    replayUrl?: string;
-    host: MultiviewRendererHost;
-    masterVolume: number;
-    hitsoundVolume: number;
-    disableGameUI: boolean;
-    hidePlatform: boolean;
-    lights: 'full' | 'static' | 'none';
-    timeline: MultiviewTimeline;
-    startBarrier: MultiviewStartBarrier;
-    settings?: Record<string, string | number | boolean>;
-    mapCache: LiveMapCache;
-    parser: BeatmapParser;
-    onPlayback(snapshot: MultiviewPlaybackSnapshot): void;
-  };
+  multiview?: MultiviewTileOptions;
 }
 
 export function ViewerShell({ multiview }: ViewerShellProps = {}) {
@@ -259,44 +135,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   const [settings, setSettings] = useState(() => {
     // Isolated embeds must be deterministic: defaults first, then URL/message
     // overrides. They neither read from nor write to another viewer's settings.
-    const saved = isolatedSettings ? defaultViewerSettings() : loadViewerSettings();
-    const broadcastSettings =
-      search.qualityPreset === 'broadcast'
-        ? {
-            graphicsQuality: 'none' as const,
-            renderScale: 0.85,
-            replayTrailSamples: 12,
-            screenDisplacementEffects: false,
-          }
-        : {};
-    return sanitizeViewerSettings({
-      ...saved,
-      ...broadcastSettings,
-      ...search.settings,
-      ...(search.lightshow === 'full-lightshow' ? { staticLights: false } : {}),
-      ...(search.masterVolume === undefined ? {} : { masterVolume: search.masterVolume }),
-      ...(search.songVolume === undefined ? {} : { songVolume: search.songVolume }),
-      ...(search.hitsoundVolume === undefined ? {} : { hitsoundVolume: search.hitsoundVolume }),
-      ...(search.hitsounds === undefined ? {} : { hitsounds: search.hitsounds }),
-      ...(search.renderScale === undefined ? {} : { renderScale: search.renderScale }),
-      ...(search.graphicsQuality === undefined ? {} : { graphicsQuality: search.graphicsQuality }),
-      ...(search.mirrorQuality === undefined ? {} : { graphicsQuality: search.mirrorQuality }),
-      ...(search.screenDisplacement === undefined ? {} : { screenDisplacementEffects: search.screenDisplacement }),
-      ...(search.camera === undefined ? {} : { replayCamera: search.camera }),
-      ...(search.fov === undefined ? {} : { replayCameraFov: search.fov }),
-      ...(search.audioOffsetMs === undefined ? {} : { audioOffsetMs: search.audioOffsetMs }),
-      ...(search.liveSource === 'ta' || search.liveSource === 'cocu'
-        ? {
-            preferReplayColors: search.settings?.preferReplayColors ?? true,
-            preferReplayEnvironment: search.settings?.preferReplayEnvironment ?? true,
-            preferReplayHsvProfile: search.settings?.preferReplayHsvProfile ?? true,
-          }
-        : {}),
-      // A bundled HSV profile replaces the player's own
-      ...(search.hsv === undefined
-        ? {}
-        : { overrideHsvProfile: true, preferReplayHsvProfile: false, hsvProfile: hsvPresets[search.hsv] }),
-    });
+    return initialViewerSettings(search, isolatedSettings ? defaultViewerSettings() : loadViewerSettings());
   });
   const settingsRef = useRef(settings);
   settingsRef.current = settings;

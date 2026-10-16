@@ -106,7 +106,8 @@ export function useViewerRemoteSource({
   const t = useTranslations('viewer');
   const sourceT = useTranslations('source');
   const navigate = useNavigate({ from: '/' });
-  const search = useSearch({ from: '/' });
+  // Not strict: the overlay route shares this search schema
+  const search = useSearch({ strict: false });
   const [sourceInput, setSourceInput] = useState('');
   const [sourceDownload, setSourceDownload] = useState<SourceDownload | null>(null);
 

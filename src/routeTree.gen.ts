@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HealthRouteImport } from './routes/health'
+import { Route as OverlayRouteImport } from './routes/overlay'
 import { Route as ApiSourceRouteImport } from './routes/api/source'
 import { Route as ApiPreviewMapRouteImport } from './routes/api/preview.map'
 import { Route as ApiPreviewPartyRouteImport } from './routes/api/preview.party'
@@ -26,6 +27,11 @@ const HealthRoute = HealthRouteImport.update({
   path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OverlayRoute = OverlayRouteImport.update({
+  id: '/overlay',
+  path: '/overlay',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/overlay.lazy').then((d) => d.Route))
 const ApiSourceRoute = ApiSourceRouteImport.update({
   id: '/api/source',
   path: '/api/source',
@@ -50,6 +56,7 @@ const ApiPreviewReplayRoute = ApiPreviewReplayRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/overlay': typeof OverlayRoute
   '/api/source': typeof ApiSourceRoute
   '/api/preview/map': typeof ApiPreviewMapRoute
   '/api/preview/party': typeof ApiPreviewPartyRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/overlay': typeof OverlayRoute
   '/api/source': typeof ApiSourceRoute
   '/api/preview/map': typeof ApiPreviewMapRoute
   '/api/preview/party': typeof ApiPreviewPartyRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
+  '/overlay': typeof OverlayRoute
   '/api/source': typeof ApiSourceRoute
   '/api/preview/map': typeof ApiPreviewMapRoute
   '/api/preview/party': typeof ApiPreviewPartyRoute
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/health'
+    | '/overlay'
     | '/api/source'
     | '/api/preview/map'
     | '/api/preview/party'
@@ -85,6 +95,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/health'
+    | '/overlay'
     | '/api/source'
     | '/api/preview/map'
     | '/api/preview/party'
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/health'
+    | '/overlay'
     | '/api/source'
     | '/api/preview/map'
     | '/api/preview/party'
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HealthRoute: typeof HealthRoute
+  OverlayRoute: typeof OverlayRoute
   ApiSourceRoute: typeof ApiSourceRoute
   ApiPreviewMapRoute: typeof ApiPreviewMapRoute
   ApiPreviewPartyRoute: typeof ApiPreviewPartyRoute
@@ -122,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/health'
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/overlay': {
+      id: '/overlay'
+      path: '/overlay'
+      fullPath: '/overlay'
+      preLoaderRoute: typeof OverlayRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/source': {
@@ -158,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HealthRoute: HealthRoute,
+  OverlayRoute: OverlayRoute,
   ApiSourceRoute: ApiSourceRoute,
   ApiPreviewMapRoute: ApiPreviewMapRoute,
   ApiPreviewPartyRoute: ApiPreviewPartyRoute,
