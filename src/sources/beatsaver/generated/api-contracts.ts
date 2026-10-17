@@ -155,6 +155,7 @@ export interface MapDifficulty {
     | "FitBeatEnvironment"
     | "LinkinParkEnvironment"
     | "BTSEnvironment"
+    | "MOSEnvironment"
     | "KaleidoscopeEnvironment"
     | "InterscopeEnvironment"
     | "SkrillexEnvironment"

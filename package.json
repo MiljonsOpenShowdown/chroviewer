@@ -57,7 +57,6 @@
     "vite-plus": "catalog:"
   },
   "engines": {
-    "node": ">=24.15.0 <25",
     "pnpm": ">=11.20.0 <12"
   },
   "packageManager": "pnpm@11.20.0"
