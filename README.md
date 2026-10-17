@@ -1,10 +1,13 @@
 <p align="center">
-  <img src="src/app/assets/github.svg" alt="MOSViewer logo" width="180">
+  <img src="src/app/assets/github.svg" alt="MOSViewer logo" width="360">
 </p>
 
 <h1 align="center">MOSViewer</h1>
 
-Forked from [Luna's ChroViewer](https://github.com/ServerBP/chroviewer), MOSViewer is very modified version of the ChroViewer-project, initially based on [ChroMapper's](https://github.com/Caeden117/ChroMapper) map previewer, ChroViewer is a browser based Beat Saber map and replay viewer
+Forked from [Luna's ChroViewer](https://github.com/ServerBP/chroviewer), MOSViewer is very modified version of the ChroViewer-project, initially based on [ChroMapper's](https://github.com/Caeden117/ChroMapper) map previewer, ChroViewer is a browser based Beat Saber map and replay viewer.
+
+Outside of utilizing the Replay-streaming components from Luna's ChroViewer, we've additionally added multiple "Clean" environments, extra sabers, URL-parameters to control even *more* variables on the go.
+MOSViewer also contains a version of ChroViewer, completely stripped down to it's bare essentials, perfect for use in Overlays, where you don't want **any** extra bloat, able to cause issues.
 
 ## Getting Started
 
