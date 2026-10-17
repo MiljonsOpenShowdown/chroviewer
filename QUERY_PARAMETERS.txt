@@ -1,4 +1,4 @@
-TCHROVIEWER QUERY PARAMETERS
+CHROVIEWER QUERY PARAMETERS
 
 Values in the URL override locally saved viewer settings for that page load.
 
