@@ -262,7 +262,10 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
       const masterVolume = Number(data.masterVolume);
       const songVolume = Number(data.songVolume);
       const hitsoundVolume = Number(data.hitsoundVolume);
-      const settingsPatch = isRecord(data.settings) ? data.settings : {};
+      const settingsPatch = {
+        ...(isRecord(data.settings) ? data.settings : {}),
+        ...(typeof data.environment === 'string' ? { environment: data.environment } : {}),
+      };
       const performancePatch = isRecord(data.performance) ? data.performance : settingsPatch;
       setPerformance((current) => updateRenderPerformance(current, performancePatch));
       setSettings((current) =>

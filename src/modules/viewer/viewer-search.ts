@@ -83,6 +83,7 @@ export const viewerSearchSchema = z.pipe(
     hitScoresOnly: z.catch(z.optional(z.boolean()), undefined),
     lightBrightness: z.catch(z.optional(unitNumberSchema), undefined),
     hsv: z.catch(z.optional(z.enum(hsvPresetIds)), undefined),
+    environment: z.catch(z.optional(z.string().check(z.minLength(1), z.maxLength(128))), undefined),
     // TA replay file of the live play so far, so a viewer opened midway starts at the live edge
     catchupUrl: z.catch(z.optional(remoteSourceUrlSchema), undefined),
     hidePlatform: z.catch(z.optional(z.boolean()), undefined),
@@ -179,6 +180,7 @@ export type ViewerSearch = z.infer<typeof viewerSearchSchema>;
 export function hasExternallyConfiguredSettings(search: ViewerSearch) {
   return (
     search.settings !== undefined ||
+    search.environment !== undefined ||
     search.qualityPreset !== undefined ||
     search.maxFps !== undefined ||
     search.renderScale !== undefined ||

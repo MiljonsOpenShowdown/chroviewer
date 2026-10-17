@@ -693,10 +693,11 @@ export function environmentForSettings(
   replayEnvironmentId: string | undefined,
   usesChromaOrNoodle: boolean,
 ) {
+  if (settings.overrideEnvironment) return settings.environmentOverrideId;
   if (settings.useMapEnvironment) return mapEnvironmentId;
   if (!usesChromaOrNoodle && settings.preferReplayEnvironment && replayEnvironmentId !== undefined)
     return replayEnvironmentId;
-  return settings.overrideEnvironment ? settings.environmentOverrideId : mapEnvironmentId;
+  return mapEnvironmentId;
 }
 
 export function colorOverride(

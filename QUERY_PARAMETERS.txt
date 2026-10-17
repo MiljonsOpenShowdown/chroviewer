@@ -160,6 +160,11 @@ Full mapped lights with gameplay objects hidden and decorative walls retained:
 
 
 ENVIRONMENT OVERRIDES
+environment=<environment id> Select an environment and enable the override (for example,
+                              environment=CleaniderEnvironment). Updates to this URL parameter
+                              also switch the active environment in a live TA embed. An explicit
+                              environment override takes priority over useMapEnvironment and
+                              preferReplayEnvironment.
 useMapEnvironment=true|false  Override the player's environment with the map's default stage.
 preferReplayEnvironment=true|false
 customEnvironmentColors=true|false  Override all six light channels independently of saber colors.
@@ -171,6 +176,11 @@ environmentLeftBoostColor=%23rrggbb
 environmentRightBoostColor=%23rrggbb
 environmentWhiteBoostColor=%23rrggbb
 Saber overrides do not replace environment colors. Existing shared customColors palettes retain their old behavior until the new controls are explicitly set.
+
+Cross-origin embeds can set or change the environment using the existing settings message:
+{ type: 'beatkhana:viewer-settings', settings: { environmentOverrideId: 'CleaniderEnvironment', overrideEnvironment: true } }
+The shorter environment field is also accepted inside settings or at the message root:
+{ type: 'beatkhana:viewer-settings', environment: 'CleaniderEnvironment' }
 
 COMPOSITOR SYNCHRONIZATION
 compositorSyncType=slow|wait-for-all

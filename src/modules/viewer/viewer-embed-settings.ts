@@ -20,6 +20,9 @@ export function initialViewerSettings(search: ViewerSearch, saved: ViewerSetting
     ...saved,
     ...broadcastSettings,
     ...search.settings,
+    ...(search.environment === undefined
+      ? {}
+      : { overrideEnvironment: true, environmentOverrideId: search.environment }),
     ...(search.lightshow === 'full-lightshow' ? { staticLights: false } : {}),
     ...(search.masterVolume === undefined ? {} : { masterVolume: search.masterVolume }),
     ...(search.songVolume === undefined ? {} : { songVolume: search.songVolume }),
@@ -65,6 +68,9 @@ export function dynamicSettingsPatch(values: Record<string, unknown>) {
   ]);
   const patch = Object.fromEntries(Object.entries(values).filter(([key]) => !performanceKeys.has(key)));
   return {
+    ...(typeof values.environment === 'string'
+      ? { overrideEnvironment: true, environmentOverrideId: values.environment }
+      : {}),
     ...(values.qualityPreset === '' || values.qualityPreset === null
       ? {
           renderScale: DEFAULT_VIEWER_SETTINGS.renderScale,
@@ -107,6 +113,7 @@ export function dynamicLocationValues() {
   const aliases = new Map([
     ['camera', 'replayCamera'],
     ['fov', 'replayCameraFov'],
+    ['environment', 'environmentOverrideId'],
   ]);
   for (const [rawKey, rawValue] of new URLSearchParams(window.location.search)) {
     const lower = rawKey.toLowerCase();
@@ -121,6 +128,9 @@ export function dynamicLocationValues() {
           : typeof defaultValue === 'boolean'
             ? rawValue.toLowerCase() === 'true'
             : rawValue;
+  }
+  if (typeof values.environmentOverrideId === 'string' && values.environmentOverrideId !== '') {
+    values.overrideEnvironment = true;
   }
   return values;
 }

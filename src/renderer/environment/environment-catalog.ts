@@ -4,6 +4,8 @@ export interface EnvironmentCatalogEntry {
 }
 
 export const environmentCatalog: readonly EnvironmentCatalogEntry[] = [
+  { id: 'CleaniderEnvironment', title: 'Clean Collider' },
+  { id: 'MOSEnvironment', title: 'MOS' },
   { id: 'DefaultEnvironment', title: 'The First' },
   { id: 'OriginsEnvironment', title: 'Origins' },
   { id: 'TriangleEnvironment', title: 'Triangle' },
@@ -22,7 +24,6 @@ export const environmentCatalog: readonly EnvironmentCatalogEntry[] = [
   { id: 'LinkinParkEnvironment', title: 'Linkin Park' },
   { id: 'GlassDesertEnvironment', title: 'Glass Desert' },
   { id: 'BTSEnvironment', title: 'BTS' },
-  { id: 'MOSEnvironment', title: 'MOS' },
   { id: 'KaleidoscopeEnvironment', title: 'Kaleidoscope' },
   { id: 'InterscopeEnvironment', title: 'Interscope' },
   { id: 'GagaEnvironment', title: 'Gaga' },

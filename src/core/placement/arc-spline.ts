@@ -30,6 +30,7 @@ export const ARC_SAMPLES = 50;
 
 const anyCutDirection = 8;
 const noteRadius = 0.45 * 0.5;
+const arcEndCurvature = 1.3;
 const degToRad = Math.PI / 180;
 const back: Vec3 = { x: 0, y: 0, z: -1 };
 
@@ -107,8 +108,8 @@ function segmentsFor(
     y: tail.y + tailAttachment.y,
     z: zDistance + noteRadius,
   };
-  const headControl = add(headAnchor, scale(headDirection, arc.headControlPointLengthMultiplier));
-  const tailControl = add(tailAnchor, scale(tailDirection, -arc.tailControlPointLengthMultiplier));
+  const headControl = add(headAnchor, scale(headDirection, arc.headControlPointLengthMultiplier * arcEndCurvature));
+  const tailControl = add(tailAnchor, scale(tailDirection, -arc.tailControlPointLengthMultiplier * arcEndCurvature));
   const angleDifference = Math.abs(cutDirectionEuler(arc.cutDirection) - cutDirectionEuler(arc.tailCutDirection));
   const samePlane = angleDifference < 1e-5 || Math.abs(angleDifference - 180) < 1e-5;
   const useMidAnchor = arc.midAnchorMode !== MidAnchorMode.Straight && samePlane && arc.posX === arc.tailPosX;

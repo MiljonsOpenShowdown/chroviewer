@@ -370,6 +370,20 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
     return unlocked;
   }
 
+  useEffect(() => {
+    function unlockOnInteraction(event: Event) {
+      if (!event.isTrusted || !clockRef.current?.audioBlocked()) return;
+      void unlockAudio();
+    }
+
+    window.addEventListener('pointerdown', unlockOnInteraction, true);
+    window.addEventListener('keydown', unlockOnInteraction, true);
+    return () => {
+      window.removeEventListener('pointerdown', unlockOnInteraction, true);
+      window.removeEventListener('keydown', unlockOnInteraction, true);
+    };
+  });
+
   function seek(target: number) {
     const clock = clockRef.current;
     if (clock === null) return;

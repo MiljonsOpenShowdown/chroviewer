@@ -181,6 +181,7 @@ export interface MapDifficulty {
     | "DaftPunkEnvironment"
     | "HipHopEnvironment"
     | "ColliderEnvironment"
+    | "CleaniderEnvironment"
     | "BritneyEnvironment"
     | "Monstercat2Environment"
     | "MetallicaEnvironment"

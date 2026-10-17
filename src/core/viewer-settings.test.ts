@@ -112,15 +112,15 @@ describe('independent player cosmetics', () => {
     expect(colors).toEqual(resolveColorScheme(environment, map));
   });
 
-  test('map environment takes priority over the player environment and explicit overrides', () => {
+  test('explicit environment overrides take priority over map and replay environments', () => {
     const settings = {
       ...DEFAULT_VIEWER_SETTINGS,
       useMapEnvironment: true,
       overrideEnvironment: true,
       environmentOverrideId: 'ExplicitEnvironment',
     };
-    expect(environmentForSettings(settings, 'MapEnvironment', 'PlayerEnvironment', false)).toBe('MapEnvironment');
-    expect(environmentForSettings(settings, 'MapEnvironment', 'PlayerEnvironment', true)).toBe('MapEnvironment');
+    expect(environmentForSettings(settings, 'MapEnvironment', 'PlayerEnvironment', false)).toBe('ExplicitEnvironment');
+    expect(environmentForSettings(settings, 'MapEnvironment', 'PlayerEnvironment', true)).toBe('ExplicitEnvironment');
     expect(
       environmentForSettings({ ...settings, useMapEnvironment: false }, 'MapEnvironment', 'PlayerEnvironment', false),
     ).toBe('PlayerEnvironment');
