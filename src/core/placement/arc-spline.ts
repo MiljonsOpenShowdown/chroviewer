@@ -30,7 +30,7 @@ export const ARC_SAMPLES = 50;
 
 const anyCutDirection = 8;
 const noteRadius = 0.45 * 0.5;
-const arcEndCurvature = 1.3;
+const arcEndCurvature = 2.0;
 const degToRad = Math.PI / 180;
 const back: Vec3 = { x: 0, y: 0, z: -1 };
 
