@@ -310,16 +310,7 @@ function rebuildReplaySaberTrail(trail: ReplaySaberTrail) {
       const t = predictionIndex / (predictions + 1);
       if (before === undefined) appendLinearTrailSample(trail, start, end.base, end.tip, t);
       else {
-        appendPredictedTrailSample(
-          trail,
-          before,
-          start,
-          end.base,
-          end.tip,
-          baseTangentScale,
-          tipTangentScale,
-          t,
-        );
+        appendPredictedTrailSample(trail, before, start, end.base, end.tip, baseTangentScale, tipTangentScale, t);
       }
     }
     appendTrailSample(trail, end.base, end.tip);

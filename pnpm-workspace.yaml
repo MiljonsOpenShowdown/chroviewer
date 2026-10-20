@@ -1,5 +1,7 @@
 allowBuilds:
   '@bufbuild/buf': true
+  # onnxruntime-web dependency; its postinstall is not needed at runtime
+  protobufjs: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.8
   vite-plus: 0.2.8

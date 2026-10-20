@@ -35,11 +35,13 @@ export class LiveMapCache {
     if (current !== undefined) return current;
     const request = load();
     this.pending.set(key, request);
-    void request.then((result) => {
-      if (result.isOk()) this.set(result.value);
-    }).finally(() => {
-      if (this.pending.get(key) === request) this.pending.delete(key);
-    });
+    void request
+      .then((result) => {
+        if (result.isOk()) this.set(result.value);
+      })
+      .finally(() => {
+        if (this.pending.get(key) === request) this.pending.delete(key);
+      });
     return request;
   }
 }

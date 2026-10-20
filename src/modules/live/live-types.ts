@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import type { SongClock } from '../../core/clock/song-clock';
 import type { Replay, ReplayHeightEvent, ReplayNoteEvent } from '../../core/replay/types';
 import type { ScoreSaberReplayPlayer, SourceResult } from '../../sources/source-types';
+import type { AiMapData } from '../ai/ai-map';
 import type { MultiviewStartBarrier } from '../multiview/multiview-start-barrier';
 import type { LiveChatMessage } from './generated/proto/scoresaber/live/v1/chat_pb';
 import type { LudusPlayState } from './generated/proto/scoresaber/live/v1/common_pb';
@@ -19,7 +20,9 @@ export type LiveStatus =
 
 export interface LiveTarget {
   playerId: string;
-  source?: 'scoresaber' | 'ta' | 'cocu';
+  source?: 'scoresaber' | 'ta' | 'cocu' | 'ai';
+  /** liveSource=ai: the map the built-in AI plays (src/modules/ai). */
+  ai?: { hash: string; difficulty: string; characteristic: string };
   tournamentId?: string;
   roomId?: string;
   matchId?: string;
@@ -78,6 +81,8 @@ export interface LiveExperienceOptions {
   hasLiveMap: (hash: string) => boolean;
   loadLiveReplay: (hash: string, replay: Replay) => Promise<SourceResult<void>>;
   selectedKey: string;
+  /** Parsed map for the built-in AI once the live map has loaded (liveSource=ai). */
+  aiMapData?: AiMapData | null;
   target: LiveTarget | null;
   transport: LiveTransport;
 }

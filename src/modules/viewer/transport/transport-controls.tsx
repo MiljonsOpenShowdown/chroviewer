@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { Pause, Play, RotateCcw } from 'lucide-react';
+import { Bot, LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import type { LightshowMode } from '../../../core/lighting/basic-light';
@@ -22,6 +22,14 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
 type TransportPanel = 'speed' | 'lights' | 'camera' | 'volume';
+
+// CyberHawk "AI Play" button: right of Play, playback mode only.
+export interface TransportAiPlay {
+  disabled: boolean;
+  busy: boolean;
+  title: string;
+  onClick: () => void;
+}
 
 interface TransportControlsProps {
   mode: 'live' | 'party' | 'playback';
@@ -50,6 +58,7 @@ interface TransportControlsProps {
   hitsoundVolume: number;
   reverseTimelineScroll: boolean;
   markers: TimelineMarker[];
+  aiPlay?: TransportAiPlay;
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onSeekBeats: (beats: number) => void;
@@ -96,6 +105,7 @@ export function TransportControls({
   hitsoundVolume,
   reverseTimelineScroll,
   markers,
+  aiPlay,
   onTogglePlay,
   onSeek,
   onSeekBeats,
@@ -169,6 +179,22 @@ export function TransportControls({
           {ended ? <RotateCcw /> : playing ? <Pause /> : <Play />}
         </Button>
       )}
+      {!readOnly &&
+        aiPlay && (
+          // Disabled buttons drop pointer events, so the tooltip lives on a wrapper.
+          <span className="shrink-0 max-sm:order-2" title={aiPlay.title}>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={aiPlay.title}
+              disabled={aiPlay.disabled || aiPlay.busy}
+              onClick={aiPlay.onClick}
+            >
+              {aiPlay.busy ? <LoaderCircle className="animate-spin" /> : <Bot />}
+              AI Play
+            </Button>
+          </span>
+        )}
       <TimelineSlider
         className="max-sm:order-1 max-sm:col-span-3"
         time={time}

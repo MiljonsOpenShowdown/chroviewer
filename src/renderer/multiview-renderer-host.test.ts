@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vite-plus/test';
 
-import { DEFAULT_RENDER_PERFORMANCE } from './render-performance';
 import { multiviewFrameRate } from './multiview-renderer-host';
+import { DEFAULT_RENDER_PERFORMANCE } from './render-performance';
 
 describe('multiview frame rate', () => {
   test('uses the lowest visible player cap', () => {

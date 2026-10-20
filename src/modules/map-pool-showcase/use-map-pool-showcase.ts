@@ -3,11 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { useSongTransport } from '../viewer/use-song-transport';
 import type { useViewerSession } from '../viewer/use-viewer-session';
 import type { PreparedBeatLeaderShowcase, useViewerSources } from '../viewer/use-viewer-sources';
-import {
-  difficultyRank,
-  type MapPoolShowcaseConfig,
-  type MapPoolShowcaseMap,
-} from './map-pool-showcase';
+import { difficultyRank, type MapPoolShowcaseConfig, type MapPoolShowcaseMap } from './map-pool-showcase';
 
 type Sources = ReturnType<typeof useViewerSources>;
 type Session = ReturnType<typeof useViewerSession>;
@@ -111,10 +107,11 @@ export function useMapPoolShowcase({
         ? Promise.resolve<PreparedEntry>({ kind: 'missing' })
         : sources
             .fetchPreparedBeatLeaderShowcase(mapReference(map), rank, map.characteristic)
-            .then((result): PreparedEntry =>
-              generation !== generationRef.current || result.isErr()
-                ? { kind: 'missing' }
-                : { kind: 'ready', value: result.value },
+            .then(
+              (result): PreparedEntry =>
+                generation !== generationRef.current || result.isErr()
+                  ? { kind: 'missing' }
+                  : { kind: 'ready', value: result.value },
             );
     preparedRef.current.set(identity, promise);
     return promise;

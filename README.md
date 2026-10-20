@@ -2,18 +2,18 @@
   <img src="src/app/assets/github.svg" alt="MOSViewer logo" width="360">
 </p>
 
-<h1 align="center">MOSViewer</h1>  
+<h1 align="center">MOSViewer</h1>
 
 > [!WARNING]
 > Neither MOS, the org, nor staff-team, will provide any support/guidance in how to use this fork.  
-> This fork is made and maintained solely for MOS use-cases, nothing else.  
+> This fork is made and maintained solely for MOS use-cases, nothing else.
 
 MOSViewer is very modified version of the ChroViewer-project, based on this [chroviewer](https://github.com/ServerBP/chroviewer)-fork.
 
-Outside of utilizing the Replay-streaming components from Luna's ChroViewer, we've additionally added multiple "Clean" environments, extra sabers, URL-parameters to control even *more* variables on the go.  
+Outside of utilizing the Replay-streaming components from Luna's ChroViewer, we've additionally added multiple "Clean" environments, extra sabers, URL-parameters to control even _more_ variables on the go.
 
 MOSViewer also contains a version of ChroViewer, completely stripped down to it's bare essentials, perfect for use in Overlays, where you don't want **any** extra bloat, able to cause issues.
-  
+
 To use the stripped down version, simply use the `/overlay`-path.  
 It accepts the same parameters as the default path.
 
