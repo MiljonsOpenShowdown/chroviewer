@@ -79,6 +79,8 @@ export function useViewerFileSource({
   const coverUrlRef = useRef<string | null>(null);
   const replayRef = useRef<Replay | null>(null);
   const audioDataRef = useRef<ArrayBuffer | null>(null);
+  // Files of the loaded map, kept so AI Play can replay a map without a BeatSaver hash.
+  const sourceFilesRef = useRef<MapSourceFile[]>([]);
   const pendingSharedViewRef = useRef<PendingSharedView | null>(null);
   const sourceGenerationRef = useRef(0);
   const [mapMeta, setMapMeta] = useState<MapMeta | null>(null);
@@ -182,6 +184,7 @@ export function useViewerFileSource({
       : null;
     setReplayPlayer(context.player ?? fallbackPlayer);
     setMapIdentity(null);
+    sourceFilesRef.current = [];
     onClearViewer();
     revokeCover();
     setCoverUrl(null);
@@ -222,6 +225,7 @@ export function useViewerFileSource({
     }
     audioDataRef.current = mapPackage.value.audioData;
     setRows(mapPackage.value.rows);
+    sourceFilesRef.current = files;
     onSourceLoaded();
     onMapLoaded();
     setMapIdentity(context.identity ?? null);
@@ -233,6 +237,7 @@ export function useViewerFileSource({
     pendingSharedViewRef.current = null;
     replayRef.current = null;
     audioDataRef.current = null;
+    sourceFilesRef.current = [];
     setMapMeta(null);
     setSongBpm(0);
     setRows([]);
@@ -362,6 +367,7 @@ export function useViewerFileSource({
     shareScoreId,
     shareScoreIdBL,
     songBpm,
+    sourceFilesRef,
     sourceLink,
   };
 }

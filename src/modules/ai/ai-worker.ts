@@ -17,7 +17,7 @@ import {
 } from './ai-features';
 import { generateChunks, generationDuration, reconstructFrames, seededGaussian } from './ai-generate';
 import type { AiMapData } from './ai-map';
-import { AiStreamBuilder, CHUNK_SECONDS } from './ai-stream';
+import { AiStreamBuilder } from './ai-stream';
 import type { FromAiWorker, ToAiWorker } from './ai-worker-protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -101,14 +101,13 @@ async function run() {
   const songSeconds = generationDuration(map.notes);
   post({ type: 'status', status: 'generating', generatedSeconds: 0, songSeconds });
 
-  // Pacer: chunk k is released at playbackStart + k * 250 ms, once it is final.
-  const playbackStart = performance.now() + start.bufferSeconds * 1000;
+  // Every chunk is released as soon as it is final; the map preview
+  // (useAiPreview) holds playback at the generation edge.
   let sent = 0;
   let ended = false;
   const pace = () => {
     if (cancelled || ended) return;
     for (;;) {
-      if (performance.now() < playbackStart + sent * CHUNK_SECONDS * 1000) break;
       const next = builder.nextChunkPacket();
       if (next === null) {
         if (builder.finished && builder.totalChunks !== null && sent >= builder.totalChunks) {

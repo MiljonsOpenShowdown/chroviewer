@@ -17,6 +17,7 @@ import type {
   BeatSaverMapSource,
   DownloadProgress,
   MapLookup,
+  MapSourceFile,
   ScoreSaberReplayPlayer,
 } from '../../sources/source-types';
 import { LiveMapCache } from '../live/live-map-cache';
@@ -69,6 +70,17 @@ async function mapPreviewStartSeconds(source: BeatSaverMapSource) {
   }
 }
 
+// Stand-in hash for a map that is not on BeatSaver (local files, map links):
+// SHA-1 of its .dat files, so the same map always gets the same hash.
+async function localMapHash(files: MapSourceFile[]) {
+  const datFiles = files
+    .filter((file) => file.name.toLowerCase().endsWith('.dat'))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const texts = await Promise.all(datFiles.map(async (file) => `${file.name}\0${await file.text()}`));
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(texts.join('\0')));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export function useViewerSources({
   remoteSourcesEnabled = true,
   setError,
@@ -112,6 +124,33 @@ export function useViewerSources({
     coverUrl: files.coverUrl,
     hasLiveMap(hash: string) {
       return liveMapCache.has(hash);
+    },
+    // Hash AI Play streams for the loaded map. The map is cached under it (a map
+    // without a BeatSaver hash under a local hash), so AI Play reloads it from
+    // the cache instead of BeatSaver.
+    async aiMapHash() {
+      const sourceFiles = files.sourceFilesRef.current;
+      if (sourceFiles.length === 0) return null;
+      const identity = files.mapIdentity;
+      const hash = identity?.hash ?? (await localMapHash(sourceFiles));
+      liveMapCache.set({ key: identity?.key ?? '', hash, files: sourceFiles });
+      return hash;
+    },
+    // AI Play in the map preview: reloads the map cached by aiMapHash, with the
+    // AI's growing replay, or without one when the AI is stopped.
+    async loadAiPreview(hash: string, replay: Replay | null, pending: PendingSharedView) {
+      const cached = liveMapCache.get(hash);
+      if (cached === undefined) {
+        return Result.err(
+          new SourceError({ message: 'AI Play map is no longer loaded', source: 'local', operation: 'load-ai-map' }),
+        );
+      }
+      const requestId = files.beginSourceRequest();
+      files.pendingSharedViewRef.current = pending;
+      const loaded = await files.loadSourceFiles(requestId, cached.files, replay, {
+        identity: cached.key === '' ? undefined : { key: cached.key, hash: cached.hash },
+      });
+      return loaded.isErr() ? Result.err(loaded.error) : Result.ok(undefined);
     },
     loadFiles(selectedFiles: File[]) {
       return files.loadFiles(selectedFiles, remote.resolveReplayMap);
@@ -212,8 +251,9 @@ export function useViewerSources({
       const cached = liveMapCache.get(hash);
       if (cached !== undefined) {
         setLiveDownloadProgress(null);
+        // A local map (empty key, see aiMapHash) has no BeatSaver identity.
         const loaded = await files.loadSourceFiles(requestId, cached.files, replay, {
-          identity: { key: cached.key, hash: cached.hash },
+          identity: cached.key === '' ? undefined : { key: cached.key, hash: cached.hash },
         });
         return loaded.isErr() ? Result.err(loaded.error) : Result.ok(undefined);
       }

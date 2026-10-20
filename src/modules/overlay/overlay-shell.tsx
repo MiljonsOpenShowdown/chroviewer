@@ -8,6 +8,7 @@ import { EmbeddedRealtimeScoreTimeline, isEmbeddedRealtimeScoreMessage } from '.
 import { replayLightshowMode } from '../live/live-replay';
 import type { LiveStatus, LiveTarget } from '../live/live-types';
 import { useLiveExperience } from '../live/use-live-experience';
+import { useAiPreview } from '../viewer/use-ai-play';
 import { useSongTransport } from '../viewer/use-song-transport';
 import { useViewerSession } from '../viewer/use-viewer-session';
 import { useViewerSources } from '../viewer/use-viewer-sources';
@@ -208,6 +209,18 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
           watcherPlayerId: search.watcherPlayerId,
           authToken: search.authToken,
         };
+  // Built-in AI, same URL parameters as the viewer: map= plus aiDiff (aiChar)
+  // plays that difficulty like the viewer's AI Play button.
+  useAiPreview({
+    sources,
+    session,
+    transport,
+    setError,
+    autoStart:
+      multiview === undefined && search.map !== undefined && search.aiDiff !== undefined
+        ? { difficulty: search.aiDiff, characteristic: search.aiChar ?? 'Standard' }
+        : undefined,
+  });
   const taLive = liveTarget?.source === 'ta' || liveTarget?.source === 'cocu';
   useEffect(() => {
     if (!taLive || liveTarget === null || multiview !== undefined) return;

@@ -152,11 +152,27 @@ scoreId=<ScoreSaber score>    Load a ScoreSaber replay.
 beat=<number>                 Initial beat for non-live playback.
 difficulty=<zero-based index> Difficulty index for a map preview.
 
+BUILT-IN AI
+aiDiff=Easy|Normal|Hard|Expert|ExpertPlus
+                              With map=, the built-in AI plays this difficulty in the map
+                              preview, the same as the AI Play button. It starts once the map
+                              has loaded and a few seconds of play are generated. Works on /
+                              and /overlay, not inside multiview tiles. Needs the model files
+                              in public/ai. map= may be a BeatSaver key, hash, or map link
+                              (e.g. a WIP zip URL).
+aiChar=<characteristic>       Characteristic for aiDiff, e.g. Standard, OneSaber, Lawless.
+                              Default Standard.
+The AI never uses the live source: playerId and liveSource are not needed (liveSource=ai
+and aiMap= were removed).
+
 EXAMPLE
 ?liveSource=ta&playerId=76561199016011545&hideUI=true&masterVolume=0.8&songVolume=0.7&hitsoundVolume=0.5&lights=static&renderScale=0.75
 
 Full mapped lights with gameplay objects hidden and decorative walls retained:
 ?showcase=true&lights=full&map=key
+
+Built-in AI playing a map's Expert+ in the overlay:
+/overlay?map=key&aiDiff=ExpertPlus&aiChar=Standard
 
 
 ENVIRONMENT OVERRIDES

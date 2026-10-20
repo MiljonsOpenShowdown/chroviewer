@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { Bot, LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react';
+import { Bot, LoaderCircle, Pause, Play, RotateCcw, Square } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import type { LightshowMode } from '../../../core/lighting/basic-light';
@@ -23,10 +23,15 @@ import { cn } from '@/lib/utils';
 
 type TransportPanel = 'speed' | 'lights' | 'camera' | 'volume';
 
-// CyberHawk "AI Play" button: right of Play, playback mode only.
+// CyberHawk "AI Play" button: right of Play, playback mode only. Active while
+// the AI plays, when it stops the AI.
 export interface TransportAiPlay {
+  active: boolean;
   disabled: boolean;
   busy: boolean;
+  label: string;
+  /** Generation progress (0-99) shown after the label while the AI generates. */
+  progress?: number;
   title: string;
   onClick: () => void;
 }
@@ -190,8 +195,12 @@ export function TransportControls({
               disabled={aiPlay.disabled || aiPlay.busy}
               onClick={aiPlay.onClick}
             >
-              {aiPlay.busy ? <LoaderCircle className="animate-spin" /> : <Bot />}
-              AI Play
+              {aiPlay.busy ? <LoaderCircle className="animate-spin" /> : aiPlay.active ? <Square /> : <Bot />}
+              {aiPlay.label}
+              {aiPlay.progress !== undefined && (
+                // Fixed-width digits and room for "(99%)", so the button does not shift.
+                <span className="min-w-[5ch] text-left tabular-nums">({aiPlay.progress}%)</span>
+              )}
             </Button>
           </span>
         )}

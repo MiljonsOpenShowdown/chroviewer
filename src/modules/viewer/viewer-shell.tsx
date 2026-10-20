@@ -15,12 +15,10 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { effectiveNoteJumpSpeed } from '../../core/beatmap/info';
 import { isForcedLightshowMode, type LightshowMode } from '../../core/lighting/basic-light';
 import { defaultViewerSettings, loadViewerSettings, sanitizeViewerSettings } from '../../core/viewer-settings';
 import { environmentCatalog } from '../../renderer/environment/environment-catalog';
-import { aiMapData, AI_DIFFICULTY_RANKS } from '../ai/ai-map';
-import { AI_PLAYER_ID } from '../ai/ai-worker-protocol';
+import { AI_DIFFICULTY_RANKS } from '../ai/ai-map';
 import { useLightshowShowcase } from '../lightshow-showcase/use-lightshow-showcase';
 import { EmbeddedRealtimeScoreTimeline, isEmbeddedRealtimeScoreMessage } from '../live/embedded-realtime-score-sync';
 import { LudusPlayState } from '../live/generated/proto/scoresaber/live/v1/common_pb';
@@ -47,7 +45,7 @@ import { ViewerActions } from './components/viewer-actions';
 import { ViewerOverlay } from './components/viewer-overlay';
 import { buildTimelineMarkers } from './timeline-markers';
 import { TransportControls } from './transport/transport-controls';
-import { useAiModelAvailability } from './use-ai-play';
+import { useAiModelAvailability, useAiPreview, type AiPlayTarget } from './use-ai-play';
 import { useSongTransport } from './use-song-transport';
 import { useViewerControls } from './use-viewer-controls';
 import { useViewerSession } from './use-viewer-session';
@@ -263,10 +261,6 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
           matchId: search.matchId,
           watcherPlayerId: search.watcherPlayerId,
           authToken: search.authToken,
-          ai:
-            search.liveSource === 'ai' && search.aiMap !== undefined && search.aiDiff !== undefined
-              ? { hash: search.aiMap, difficulty: search.aiDiff, characteristic: search.aiChar ?? 'Standard' }
-              : undefined,
         };
   const liveActive = liveTarget !== null;
   const taLive = liveTarget?.source === 'ta' || liveTarget?.source === 'cocu';
@@ -415,33 +409,8 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     transport.seek(requestedStart >= transport.duration ? 0 : requestedStart);
     transport.play({ autoplay: true });
   }, [search.previewSource, search.previewStartSeconds, transport.duration, transport.ended]);
-  // Built-in AI (src/modules/ai): the selected difficulty in the form the AI
-  // consumes. In AI live mode it is handed to the AI worker once loaded.
-  const selectedRow = sources.rows.find((row) => row.key === session.selectedKey);
-  const selectedInfoDifficulty = selectedRow?.infoDifficulty;
-  const liveAi = liveTarget?.ai;
-  const liveAiMapData = useMemo(() => {
-    if (liveAi === undefined || selectedRow?.difficulty === undefined || selectedInfoDifficulty === undefined)
-      return null;
-    if (
-      selectedInfoDifficulty.difficulty !== liveAi.difficulty ||
-      selectedInfoDifficulty.characteristic !== liveAi.characteristic
-    )
-      return null;
-    return aiMapData(selectedRow.difficulty, sources.songBpm, {
-      ...liveAi,
-      njs: effectiveNoteJumpSpeed(selectedInfoDifficulty),
-    });
-  }, [
-    liveAi?.hash,
-    liveAi?.difficulty,
-    liveAi?.characteristic,
-    selectedRow?.difficulty,
-    selectedInfoDifficulty,
-    sources.songBpm,
-  ]);
+  const selectedInfoDifficulty = sources.rows.find((row) => row.key === session.selectedKey)?.infoDifficulty;
   const live = useLiveExperience({
-    aiMapData: liveAiMapData,
     appendReplayHeightEvents: session.appendLiveReplayHeightEvents,
     appendReplayNoteEvents: session.appendLiveReplayNoteEvents,
     refreshReplayDisplay: session.refreshLiveReplayDisplay,
@@ -618,17 +587,25 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     [session.selectedKey, sources.rows],
   );
   const replay = sources.replayRef.current;
-  // AI Play needs a BeatSaver map (hash), a chosen difficulty and the model in
-  // public/ai; it is offered only while no replay is loaded. It switches the
-  // viewer to AI live mode, where the built-in AI plays the map in the browser.
+  // AI Play needs a loaded map (BeatSaver or local, see sources.aiMapHash), a
+  // chosen difficulty and the model in public/ai; it is offered only while no
+  // other replay is loaded. The built-in AI then plays the map in the browser,
+  // right here in the map preview (useAiPreview).
   const aiModel = useAiModelAvailability();
-  const aiPlayTarget =
-    sources.mapIdentity !== null &&
-    selectedInfoDifficulty !== undefined &&
-    selectedInfoDifficulty.difficulty in AI_DIFFICULTY_RANKS
+  const aiPreview = useAiPreview({
+    sources,
+    session,
+    transport,
+    setError,
+    autoStart:
+      multiview === undefined && search.map !== undefined && search.aiDiff !== undefined
+        ? { difficulty: search.aiDiff, characteristic: search.aiChar ?? 'Standard' }
+        : undefined,
+  });
+  const aiPlayTarget: AiPlayTarget | null =
+    selectedInfoDifficulty !== undefined && selectedInfoDifficulty.difficulty in AI_DIFFICULTY_RANKS
       ? {
-          hash: sources.mapIdentity.hash,
-          difficulty: selectedInfoDifficulty.difficulty as 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus',
+          difficulty: selectedInfoDifficulty.difficulty as AiPlayTarget['difficulty'],
           characteristic: selectedInfoDifficulty.characteristic,
         }
       : null;
@@ -1122,32 +1099,35 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
             hitsoundVolume={settings.hitsoundVolume}
             reverseTimelineScroll={settings.reverseTimelineScroll}
             markers={timelineMarkers}
-            aiPlay={{
-              disabled: replay !== null || aiPlayTarget === null || aiModel !== 'available',
-              busy: aiModel === 'checking',
-              title:
-                replay !== null
-                  ? 'AI Play is unavailable while viewing a replay'
-                  : aiModel === 'missing'
-                    ? 'No AI model installed (public/ai)'
-                    : aiPlayTarget === null
-                      ? 'Load a BeatSaver map to let the AI play it'
-                      : `Let the AI play ${aiPlayTarget.characteristic} ${aiPlayTarget.difficulty} (starts after a 5 second buffer)`,
-              onClick() {
-                if (aiPlayTarget === null) return;
-                transport.pause();
-                void router.navigate({
-                  to: '/',
-                  search: {
-                    playerId: AI_PLAYER_ID,
-                    liveSource: 'ai',
-                    aiMap: aiPlayTarget.hash,
-                    aiDiff: aiPlayTarget.difficulty,
-                    aiChar: aiPlayTarget.characteristic,
-                  },
-                });
-              },
-            }}
+            aiPlay={
+              aiPreview.active
+                ? {
+                    active: true,
+                    disabled: false,
+                    busy: false,
+                    label: 'Stop AI',
+                    progress: aiPreview.progress < 100 ? aiPreview.progress : undefined,
+                    title: 'Stop the AI and show the map without its play',
+                    onClick: aiPreview.stop,
+                  }
+                : {
+                    active: false,
+                    disabled: replay !== null || aiPlayTarget === null || aiModel !== 'available',
+                    busy: aiModel === 'checking',
+                    label: 'AI Play',
+                    title:
+                      replay !== null
+                        ? 'AI Play is unavailable while viewing a replay'
+                        : aiModel === 'missing'
+                          ? 'No AI model installed (public/ai)'
+                          : aiPlayTarget === null
+                            ? 'Load a map to let the AI play it'
+                            : `Let the AI play ${aiPlayTarget.characteristic} ${aiPlayTarget.difficulty} (starts once a few seconds are generated)`,
+                    onClick() {
+                      if (aiPlayTarget !== null) void aiPreview.start(aiPlayTarget);
+                    },
+                  }
+            }
             onTogglePlay={() => {
               transport.togglePlay();
             }}

@@ -18,7 +18,7 @@ export type ViewerShareSource =
   | {
       type: 'live';
       playerId: string;
-      liveSource?: 'scoresaber' | 'ta' | 'cocu' | 'ai';
+      liveSource?: 'scoresaber' | 'ta' | 'cocu';
       tournamentId?: string;
       roomId?: string;
       matchId?: string;
@@ -111,17 +111,8 @@ export const viewerSearchSchema = z.pipe(
     audioOffsetMs: z.catch(z.optional(audioOffsetSchema), undefined),
     settings: z.catch(z.optional(viewerSettingsPatchSchema), undefined),
     playerId: z.catch(z.optional(livePlayerIdSchema), undefined),
-    liveSource: z.catch(z.optional(z.enum(['scoresaber', 'ta', 'cocu', 'ai'])), undefined),
-    // Built-in AI player (liveSource=ai): which map/difficulty it plays
-    aiMap: z.catch(
-      z.optional(
-        z.pipe(
-          z.string().check(z.regex(/^[0-9a-f]{40}$/i)),
-          z.transform((v) => v.toLowerCase()),
-        ),
-      ),
-      undefined,
-    ),
+    liveSource: z.catch(z.optional(z.enum(['scoresaber', 'ta', 'cocu'])), undefined),
+    // Built-in AI player: with map=, it plays this difficulty in the map preview
     aiDiff: z.catch(z.optional(z.enum(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])), undefined),
     aiChar: z.catch(z.optional(z.string().check(z.regex(/^[A-Za-z0-9]{1,24}$/))), undefined),
     tournamentId: z.catch(z.optional(liveIdSchema), undefined),

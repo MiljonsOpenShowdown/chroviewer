@@ -3,8 +3,6 @@ import { useEffect, type Dispatch, type RefObject, type SetStateAction } from 'r
 import { fromBinary } from '@bufbuild/protobuf';
 import { Result } from 'better-result';
 
-import { AI_DIFFICULTY_RANKS } from '../ai/ai-map';
-import { AI_BUFFER_SECONDS, AI_MODEL_BASE, type FromAiWorker, type ToAiWorker } from '../ai/ai-worker-protocol';
 import type { LiveChatMessage } from './generated/proto/scoresaber/live/v1/chat_pb';
 import { LudusPlayState } from './generated/proto/scoresaber/live/v1/common_pb';
 import {
@@ -68,9 +66,6 @@ export function useLiveConnection(
         : null;
     runtimeRef.current = runtime;
     setState(initialLiveState);
-    // liveSource=ai: the built-in AI worker plays the role of the socket.
-    let aiWorker: Worker | null = null;
-    let aiMapSent = false;
 
     function updateConnectionState(status: LiveStatus) {
       const canChat =
@@ -455,62 +450,8 @@ export function useLiveConnection(
       );
     }
 
-    function startAiWorker() {
-      const ai = activeTarget.ai;
-      if (ai === undefined) {
-        updateConnectionState('error');
-        return;
-      }
-      const worker = new Worker(new URL('../ai/ai-worker.ts', import.meta.url), { type: 'module' });
-      aiWorker = worker;
-      worker.onmessage = (event: MessageEvent<FromAiWorker>) => {
-        if (disposed || aiWorker !== worker) return;
-        const message = event.data;
-        if (message.type === 'packet') handleTournamentAssistantReplay(message.bytes);
-        else if (message.type === 'error') {
-          console.error(`(ai) ${message.message}`);
-          updateConnectionState('error');
-        }
-      };
-      worker.onerror = (event) => {
-        console.error('(ai) worker failed', event.message);
-        if (!disposed) updateConnectionState('error');
-      };
-      const start: ToAiWorker = {
-        type: 'start',
-        streamId: crypto.randomUUID(),
-        playerId: activeTarget.playerId,
-        mapHash: ai.hash,
-        difficulty: ai.difficulty,
-        difficultyRank: AI_DIFFICULTY_RANKS[ai.difficulty] ?? 9,
-        characteristic: ai.characteristic,
-        modelBase: AI_MODEL_BASE,
-        bufferSeconds: AI_BUFFER_SECONDS,
-        height: 1.65,
-      };
-      worker.postMessage(start);
-      updateConnectionState('waiting');
-    }
-
-    /** Hands the AI its map once the live view has loaded and parsed it. */
-    function sendAiMap() {
-      if (aiWorker === null || aiMapSent) return;
-      const data = optionsRef.current.aiMapData;
-      const ai = activeTarget.ai;
-      if (data == null || ai === undefined) return;
-      if (data.hash !== ai.hash || data.difficulty !== ai.difficulty || data.characteristic !== ai.characteristic)
-        return;
-      aiMapSent = true;
-      const message: ToAiWorker = { type: 'map', data };
-      aiWorker.postMessage(message);
-    }
-
     async function connect() {
       if (runtimeRef.current !== runtime) return;
-      if (activeTarget.source === 'ai') {
-        startAiWorker();
-        return;
-      }
       updateConnectionState(runtime.reconnectAttempt === 0 ? 'connecting' : 'reconnecting');
       const browserSession =
         activeTarget.source === 'ta' || activeTarget.source === 'cocu'
@@ -572,7 +513,7 @@ export function useLiveConnection(
       }
       if (!clock.isPlaying())
         transport.play({
-          autoplay: activeTarget.source === 'ta' || activeTarget.source === 'cocu' || activeTarget.source === 'ai',
+          autoplay: activeTarget.source === 'ta' || activeTarget.source === 'cocu',
         });
       return clock.isPlaying();
     }
@@ -589,7 +530,6 @@ export function useLiveConnection(
     };
 
     function tickPlayback() {
-      sendAiMap();
       const transport = optionsRef.current.transport;
       const clock = transport.clockRef.current;
       const startBarrier = optionsRef.current.startBarrier;
@@ -683,11 +623,6 @@ export function useLiveConnection(
       window.clearInterval(playbackId);
       window.clearTimeout(runtime.reconnectId);
       closeSocket();
-      if (aiWorker !== null) {
-        aiWorker.postMessage({ type: 'stop' } satisfies ToAiWorker);
-        aiWorker.terminate();
-        aiWorker = null;
-      }
       taSync?.dispose();
       pausePlayback();
       if (runtimeRef.current === runtime) runtimeRef.current = null;
@@ -700,8 +635,5 @@ export function useLiveConnection(
     target?.source,
     target?.tournamentId,
     target?.watcherPlayerId,
-    target?.ai?.hash,
-    target?.ai?.difficulty,
-    target?.ai?.characteristic,
   ]);
 }

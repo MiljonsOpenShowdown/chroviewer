@@ -2,9 +2,7 @@ import type { AiMapData } from './ai-map';
 
 /** Drop folder served by the viewer (public/ai). Replace its files to update the AI. */
 export const AI_MODEL_BASE = '/ai';
-/** Generation head start before the AI stream starts playing. */
-export const AI_BUFFER_SECONDS = 5;
-// Live player ids are numeric in the viewer's URL schema; 0 is never a real platform id.
+// Player id inside the AI's replay stream; 0 is never a real platform id.
 export const AI_PLAYER_ID = '0';
 
 export type ToAiWorker =
@@ -17,7 +15,6 @@ export type ToAiWorker =
       difficultyRank: number;
       characteristic: string;
       modelBase: string;
-      bufferSeconds: number;
       height: number;
     }
   | { type: 'map'; data: AiMapData }

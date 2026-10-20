@@ -26,7 +26,7 @@ export function isTaReplayFile(data: Uint8Array) {
   );
 }
 
-function appendChunk(replay: Replay, chunk: ReplayChunk) {
+export function appendChunk(replay: Replay, chunk: ReplayChunk) {
   applyLiveReplayExtensions(replay, chunk.replayExtensions, true);
   const events = chunk.events;
   if (events === undefined) return;
@@ -53,7 +53,7 @@ function appendChunk(replay: Replay, chunk: ReplayChunk) {
 }
 
 // Mirrors applyLiveReplayEnd: the end packet carries the final score and the fail time.
-function applyEnd(replay: Replay, end: ReplayStreamEnd, lastTime: number) {
+export function applyEnd(replay: Replay, end: ReplayStreamEnd, lastTime: number) {
   const time = Math.max(lastTime, Number(end.cursor?.songTimeMs ?? 0n) / 1000);
   if (end.completion === ReplayCompletion.FAILED) replay.metadata.failTime = time;
   if (end.score === undefined) return;
