@@ -41,6 +41,17 @@ const remoteSourceUrlSchema = z.pipe(
     }),
   ),
 );
+// Base URL of a TA-style live server ('<base>/live/u/<playerId>'): wss, or ws on loopback.
+const liveSocketUrlSchema = z.pipe(
+  z.string().check(z.maxLength(4096)),
+  z.url({ protocol: /^wss?$/ }).check(
+    z.refine((value) => {
+      if (!URL.canParse(value)) return false;
+      const url = new URL(value);
+      return url.protocol === 'wss:' || loopbackHostnames.has(url.hostname);
+    }),
+  ),
+);
 const mapSourceSchema = z.union([mapKeySchema, remoteSourceUrlSchema]);
 const nonnegativeNumberSchema = z.number().check(z.nonnegative());
 const unitNumberSchema = z.number().check(z.minimum(0), z.maximum(1));
@@ -86,6 +97,8 @@ export const viewerSearchSchema = z.pipe(
     environment: z.catch(z.optional(z.string().check(z.minLength(1), z.maxLength(128))), undefined),
     // TA replay file of the live play so far, so a viewer opened midway starts at the live edge
     catchupUrl: z.catch(z.optional(remoteSourceUrlSchema), undefined),
+    // Live server used instead of TA's for a TA/CoCu player (e.g. MOS for its AI players)
+    liveUrl: z.catch(z.optional(liveSocketUrlSchema), undefined),
     hidePlatform: z.catch(z.optional(z.boolean()), undefined),
     lightshow: z.catch(z.optional(z.literal('full-lightshow')), undefined),
     lights: z.catch(z.optional(z.enum(['full', 'full-lightshow', 'static', 'none'])), undefined),
@@ -290,6 +303,10 @@ export function replaceRenderPerformance(values: Record<string, unknown>): Rende
     qualityPreset: '',
     ...values,
   });
+}
+
+export function isLiveSocketUrl(value: string) {
+  return liveSocketUrlSchema.safeParse(value).success;
 }
 
 export function isRemoteSourceUrl(value: string) {

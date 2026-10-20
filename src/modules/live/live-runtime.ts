@@ -1,6 +1,7 @@
 import type { SongClock } from '../../core/clock/song-clock';
 import type { Replay } from '../../core/replay/types';
 import { CoCuLiveSocketUrl, env, TALiveSocketUrl } from '../../env';
+import { isLiveSocketUrl } from '../viewer/viewer-search';
 import type { ReplayStreamPacket } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
 import type { LivePlaybackBuffer } from './generated/proto/scoresaber/live/v1/room_state_pb';
 import type { ScheduledReplayPause } from './live-playback';
@@ -68,6 +69,11 @@ export interface LiveRuntime {
   websocketUrl: string;
 }
 
+function liveSocketBase(target: LiveTarget) {
+  if (target.liveUrl !== undefined && isLiveSocketUrl(target.liveUrl)) return target.liveUrl.replace(/[/]+$/, '');
+  return target.source === 'cocu' ? CoCuLiveSocketUrl : TALiveSocketUrl;
+}
+
 export function createLiveRuntime(target: LiveTarget): LiveRuntime {
   return {
     bufferedPackets: [],
@@ -113,7 +119,7 @@ export function createLiveRuntime(target: LiveTarget): LiveRuntime {
     targetMatchId: target.matchId ?? (target.roomId === undefined ? `player:${target.playerId}` : ''),
     websocketUrl:
       target.source === 'ta' || target.source === 'cocu'
-        ? `${target.source === 'cocu' ? CoCuLiveSocketUrl : TALiveSocketUrl}/live/u/${encodeURIComponent(target.playerId)}`
+        ? `${liveSocketBase(target)}/live/u/${encodeURIComponent(target.playerId)}`
         : ludusWebSocketUrl(env.VITE_LUDUS_URL),
   };
 }

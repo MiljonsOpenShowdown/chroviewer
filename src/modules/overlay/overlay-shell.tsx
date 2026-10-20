@@ -203,6 +203,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
       : {
           playerId: search.playerId,
           source: search.liveSource,
+          liveUrl: search.liveUrl,
           tournamentId: search.tournamentId,
           roomId: search.roomId,
           matchId: search.matchId,

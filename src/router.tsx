@@ -99,6 +99,7 @@ const searchKeyAliases = new Map(
     lightbrightness: 'lightBrightness',
     hsv: 'hsv',
     catchupurl: 'catchupUrl',
+    liveurl: 'liveUrl',
     hideplatform: 'hidePlatform',
     lightshow: 'lightshow',
     lights: 'lights',
@@ -149,6 +150,7 @@ const stringSearchAliases = {
   authToken: ['authtoken'],
   syncGroup: ['syncgroup'],
   catchupUrl: ['catchupurl'],
+  liveUrl: ['liveurl'],
   showcaseConfig: ['showcaseconfig'],
   poolShowcaseConfig: ['poolshowcaseconfig'],
 };

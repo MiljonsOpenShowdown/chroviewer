@@ -20,6 +20,8 @@ export type LiveStatus =
 export interface LiveTarget {
   playerId: string;
   source?: 'scoresaber' | 'ta' | 'cocu';
+  /** Live server base used instead of TA's/CoCu's; only taken when isLiveSocketUrl accepts it. */
+  liveUrl?: string;
   tournamentId?: string;
   roomId?: string;
   matchId?: string;

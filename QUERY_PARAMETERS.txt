@@ -47,6 +47,10 @@ catchupUrl=<HTTPS URL>        A TournamentAssistant replay file ("TAReplayStream
                               the live socket's packets, and playback starts just behind the
                               live edge, so a viewer opened midway does not wait for new data.
                               Skipped after 8 seconds or on any error. Needs CORS.
+liveUrl=<WSS URL>             Live server to follow the player on instead of TA's (or
+                              CoCu's): the viewer connects to <liveUrl>/live/u/<playerId>,
+                              which speaks TA's live protocol. Used by MOS for the Training
+                              Grounds' AI players. ws:// only on localhost.
 
 SETTINGS ISOLATION
 isolatedSettings=true         Start from the default settings instead of the ones saved in
