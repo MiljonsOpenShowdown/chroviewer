@@ -193,7 +193,7 @@ export function encodeUnmuteWatchPartyParticipantEnvelope(
 }
 
 export function ludusWebSocketUrl(baseUrl: string) {
-  const url = new URL(baseUrl);
+  const url = new URL(baseUrl === 'same-origin' ? window.location.origin : baseUrl);
   if (url.protocol === 'https:') url.protocol = 'wss:';
   else if (url.protocol === 'http:') url.protocol = 'ws:';
   if (url.pathname === '' || url.pathname === '/') url.pathname = '/v1/connect';

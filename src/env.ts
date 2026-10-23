@@ -32,7 +32,9 @@ export const env = createEnv({
     VITE_BEATSAVER_API_URL: publicApiUrl.default('https://api.beatsaver.com'),
     VITE_SCORESABER_API_URL: publicApiUrl.default('https://scoresaber.com'),
     VITE_BEATLEADER_API_URL: publicApiUrl.default('https://api.beatleader.com'),
-    VITE_LUDUS_URL: publicApiUrl.default('https://ludus-1.scoresaber.com'),
+    // 'same-origin': connect to the host that served the page, for a proxy
+    // that forwards /v1/connect (works on localhost, LAN, Tailscale or a tunnel).
+    VITE_LUDUS_URL: z.union([z.literal('same-origin'), publicApiUrl]).default('https://ludus-1.scoresaber.com'),
     VITE_TA_LIVE_SOCKET_URL: publicWebSocketUrl.default('wss://server.tournamentassistant.net:8676'),
     VITE_COCU_LIVE_SOCKET_URL: publicWebSocketUrl.default('wss://ws.compcube.net'),
     VITE_ENABLED_SOURCES: enabledViewerSourcesSchema,

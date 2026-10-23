@@ -23,6 +23,11 @@ import { item } from './ai-util';
 
 export const START_TIME = -1;
 export const DEFAULT_PLAYER_HEIGHT = 1.65;
+// Open-loop play drifts: each chunk continues from the previous one's output, so a
+// small depth bias adds up to ~1 m over a long song and the sabers end up cutting
+// behind the notes. Past these limits the body is eased back (inference.py).
+const DRIFT_LIMIT_X = 0.4;
+const DRIFT_LIMIT_Z = 0.25;
 
 /** One model call: normalized history (30x28), notes (30x21), environment (30x5) -> 30x27. */
 export type RunChunk = (history: Float32Array, notes: Float32Array, environment: Float32Array) => Promise<Float32Array>;
@@ -68,12 +73,38 @@ export function generationDuration(notes: AiNote[]) {
   return notes.length > 0 ? item(notes, notes.length - 1)[0] + 2 : 10;
 }
 
+/**
+ * Keeps the head (and the hands, stored relative to it) near home = raw [x, z].
+ * Port of anchor_drift in inference.py: when the normalized 30x27 chunk ends past a
+ * limit, the excess is removed along a ramp (none at the first frame, all at the
+ * last), so the chunk still joins the previous one. Modifies the chunk in place.
+ */
+export function anchorDrift(chunk: Float32Array, home: [number, number], stats: PositionStats) {
+  // head x and z: frame columns 0 and 2, which are also position stats 0 and 2
+  for (const [column, limit, homeValue] of [
+    [0, DRIFT_LIMIT_X, home[0]],
+    [2, DRIFT_LIMIT_Z, home[1]],
+  ] as const) {
+    const std = item(stats.std, column);
+    const last = item(chunk, (PREDICTION_FRAMES - 1) * MODEL_OUTPUT_FEATURES + column);
+    const offset = last * std + item(stats.mean, column) - homeValue;
+    const excess = offset - Math.min(Math.max(offset, -limit), limit);
+    if (excess === 0) continue;
+    for (let frame = 0; frame < PREDICTION_FRAMES; frame++) {
+      const k = frame * MODEL_OUTPUT_FEATURES + column;
+      chunk[k] = item(chunk, k) - ((frame + 1) / PREDICTION_FRAMES) * (excess / std);
+    }
+  }
+  return chunk;
+}
+
 /** Yields each predicted chunk (still normalized) in song order. */
 export async function* generateChunks(runChunk: RunChunk, options: GenerateOptions) {
   const { notes, walls, stats } = options;
   const height = options.height ?? DEFAULT_PLAYER_HEIGHT;
   const random = options.random === undefined ? seededGaussian(0) : options.random;
   const seed = normalizePositions(options.seed, stats);
+  const home: [number, number] = [item(options.seed, 0), item(options.seed, 2)];
   let history = new Float32Array(HISTORY_FRAMES * MODEL_INPUT_FEATURES);
   for (let frame = 0; frame < HISTORY_FRAMES; frame++) history.set(seed, frame * MODEL_INPUT_FEATURES);
 
@@ -95,7 +126,7 @@ export async function* generateChunks(runChunk: RunChunk, options: GenerateOptio
       }
     }
 
-    const chunk = await runChunk(input, noteInput, environment);
+    const chunk = anchorDrift(await runChunk(input, noteInput, environment), home, stats);
     yield chunk;
 
     history = new Float32Array(HISTORY_FRAMES * MODEL_INPUT_FEATURES);

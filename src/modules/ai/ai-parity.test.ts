@@ -19,7 +19,7 @@ import {
   noteFeatures,
   PREDICTION_FRAMES,
 } from './ai-features';
-import { type AiFrame, generateChunks } from './ai-generate';
+import { type AiFrame, anchorDrift, generateChunks } from './ai-generate';
 import { aiMapData } from './ai-map';
 import { AiStreamBuilder } from './ai-stream';
 import { item } from './ai-util';
@@ -36,6 +36,7 @@ interface Golden {
   stats: { mean: number[]; std: number[] };
   features: { time: number; notes: number[]; density: number; environment: number[] }[];
   generation: { chunks: number[][] };
+  anchor: { home: [number, number]; input: number[]; expected: number[] };
   sim: {
     njs: number;
     frames: number[][];
@@ -133,6 +134,11 @@ describe('built-in AI matches the Python reference', () => {
     }
     golden.generation.chunks.forEach((expected, i) => expectClose(item(chunks, i), expected, 2e-3));
   }, 60_000);
+
+  test('drift anchor', () => {
+    const chunk = anchorDrift(Float32Array.from(golden.anchor.input), golden.anchor.home, golden.stats);
+    expectClose(chunk, golden.anchor.expected, 1e-5);
+  });
 
   test('cut simulation', () => {
     const frames = resampleFrames(golden.sim.frames.map(toFrame));

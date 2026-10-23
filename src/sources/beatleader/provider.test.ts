@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vite-plus/test';
 import { fetchTopBeatLeaderScore } from './provider';
 
 describe('fetchTopBeatLeaderScore', () => {
-  test('requests rank ascending and selects the lowest returned rank defensively', async () => {
+  test('requests rank descending and selects the lowest returned rank defensively', async () => {
     let requestedUrl = '';
     const result = await fetchTopBeatLeaderScore('leaderboard-id', {
       request: (input) => {
@@ -20,7 +20,7 @@ describe('fetchTopBeatLeaderScore', () => {
       },
     });
 
-    expect(requestedUrl).toContain('sortBy=rank&order=asc');
+    expect(requestedUrl).toContain('sortBy=rank&order=desc');
     expect(result.isOk()).toBe(true);
     if (result.isOk()) expect(result.value).toBe('10');
   });

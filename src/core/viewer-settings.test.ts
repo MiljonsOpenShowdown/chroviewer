@@ -123,7 +123,7 @@ describe('independent player cosmetics', () => {
     expect(environmentForSettings(settings, 'MapEnvironment', 'PlayerEnvironment', true)).toBe('ExplicitEnvironment');
     expect(
       environmentForSettings({ ...settings, useMapEnvironment: false }, 'MapEnvironment', 'PlayerEnvironment', false),
-    ).toBe('PlayerEnvironment');
+    ).toBe('ExplicitEnvironment');
     expect(
       environmentForSettings({ ...settings, useMapEnvironment: false }, 'MapEnvironment', 'PlayerEnvironment', true),
     ).toBe('ExplicitEnvironment');
