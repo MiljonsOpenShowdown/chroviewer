@@ -18,7 +18,7 @@ import {
 import { generateChunks, generationDuration, reconstructFrames, seededGaussian } from './ai-generate';
 import type { AiMapData } from './ai-map';
 import { AiStreamBuilder } from './ai-stream';
-import type { FromAiWorker, ToAiWorker } from './ai-worker-protocol';
+import type { AiModelKind, FromAiWorker, ToAiWorker } from './ai-worker-protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -30,9 +30,32 @@ interface Model {
   session: ort.InferenceSession;
   stats: PositionStats;
   seed: number[];
+  kind: AiModelKind;
 }
 
-let start: Extract<ToAiWorker, { type: 'start' }> | null = null;
+/** public/ai/specialists/index.json, written by replay_ai/export_onnx.py. */
+interface SpecialistIndex {
+  specialists?: Record<string, { file: string; version: string } | undefined>;
+}
+
+type Start = Extract<ToAiWorker, { type: 'start' }>;
+
+/** The map's specialist model (Standard only, keyed <hash>_<difficulty>), if one is exported. */
+async function specialistUrl(base: string, start: Start): Promise<string | null> {
+  if (start.characteristic.toLowerCase() !== 'standard') return null;
+  try {
+    const response = await fetch(`${base}/specialists/index.json`, { cache: 'no-cache' });
+    if (!response.ok) return null;
+    const index = (await response.json()) as SpecialistIndex;
+    const entry = index.specialists?.[`${start.mapHash.toLowerCase()}_${start.difficulty}`];
+    if (entry === undefined) return null;
+    return `${base}/specialists/${encodeURIComponent(entry.file)}?v=${encodeURIComponent(entry.version)}`;
+  } catch {
+    return null; // no specialists folder: the base model plays
+  }
+}
+
+let start: Start | null = null;
 let model: Model | null = null;
 let map: AiMapData | null = null;
 let running = false;
@@ -53,13 +76,14 @@ async function fetchOk(url: string) {
   return response;
 }
 
-async function loadModel(base: string): Promise<Model> {
+async function loadModel(base: string, startMessage: Start): Promise<Model> {
   const version = (
     await fetch(`${base}/version.txt`, { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : ''))
   ).trim();
   const v = version === '' ? '' : `?v=${encodeURIComponent(version)}`;
+  const specialist = await specialistUrl(base, startMessage);
   const [modelBytes, stats, seed] = await Promise.all([
-    fetchOk(`${base}/model.onnx${v}`).then((r) => r.arrayBuffer()),
+    fetchOk(specialist ?? `${base}/model.onnx${v}`).then((r) => r.arrayBuffer()),
     fetchOk(`${base}/stats.json${v}`).then((r) => r.json() as Promise<PositionStats>),
     fetchOk(`${base}/idle_seed.json${v}`).then((r) => r.json() as Promise<number[]>),
   ]);
@@ -67,7 +91,7 @@ async function loadModel(base: string): Promise<Model> {
     executionProviders: ['wasm'],
     graphOptimizationLevel: 'all',
   });
-  return { session, stats, seed };
+  return { session, stats, seed, kind: specialist === null ? 'base' : 'specialist' };
 }
 
 async function runChunk(history: Float32Array, notes: Float32Array, environment: Float32Array) {
@@ -171,9 +195,10 @@ self.onmessage = (event: MessageEvent<ToAiWorker>) => {
     }).startPacket(),
   );
   post({ type: 'status', status: 'loading' });
-  loadModel(message.modelBase)
+  loadModel(message.modelBase, message)
     .then((loaded) => {
       model = loaded;
+      post({ type: 'status', status: 'loading', model: loaded.kind });
       if (map === null) post({ type: 'status', status: 'waiting-map' });
       return run();
     })

@@ -22,7 +22,10 @@ export type ToAiWorker =
 
 export type AiWorkerStatus = 'loading' | 'waiting-map' | 'generating' | 'done';
 
+/** base = model.onnx; specialist = the map's own model from public/ai/specialists. */
+export type AiModelKind = 'base' | 'specialist';
+
 export type FromAiWorker =
   | { type: 'packet'; bytes: ArrayBuffer }
-  | { type: 'status'; status: AiWorkerStatus; generatedSeconds?: number; songSeconds?: number }
+  | { type: 'status'; status: AiWorkerStatus; generatedSeconds?: number; songSeconds?: number; model?: AiModelKind }
   | { type: 'error'; message: string };

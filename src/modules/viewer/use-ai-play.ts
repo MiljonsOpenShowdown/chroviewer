@@ -82,6 +82,8 @@ export function useAiPreview(options: {
   const autoStartedRef = useRef(false);
   const [active, setActive] = useState(false);
   const [progress, setProgress] = useState(0);
+  // Whether this map's specialist model plays (public/ai/specialists) instead of model.onnx.
+  const [specialist, setSpecialist] = useState(false);
 
   function pending(target: AiPlayTarget) {
     return { difficultyRank: AI_DIFFICULTY_RANKS[target.difficulty], characteristic: target.characteristic };
@@ -93,6 +95,7 @@ export function useAiPreview(options: {
     runRef.current = null;
     setActive(false);
     setProgress(0);
+    setSpecialist(false);
   }
 
   function fail(run: AiPreviewRun, message: string) {
@@ -171,6 +174,7 @@ export function useAiPreview(options: {
       const message = event.data;
       if (message.type === 'packet') receive(run, new Uint8Array(message.bytes));
       else if (message.type === 'error') fail(run, `AI Play failed: ${message.message}`);
+      else if (message.model !== undefined) setSpecialist(message.model === 'specialist');
       else if (message.generatedSeconds !== undefined && message.songSeconds) {
         setProgress(Math.min(100, Math.floor((message.generatedSeconds / message.songSeconds) * 100)));
       }
@@ -275,5 +279,5 @@ export function useAiPreview(options: {
     [],
   );
 
-  return { active, progress, start, stop };
+  return { active, progress, specialist, start, stop };
 }
