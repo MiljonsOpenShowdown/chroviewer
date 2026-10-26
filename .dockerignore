@@ -8,6 +8,7 @@
 !tsconfig.json
 !vite.config.ts
 !patches/**
+public/ai/**
 src/app/assets/*.ai
 src/modules/live/proto/**
 src/sources/*/openapi.json

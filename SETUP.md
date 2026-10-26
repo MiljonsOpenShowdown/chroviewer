@@ -41,6 +41,8 @@ The AI Play models live in a separate private repository ([MOSes_Models](https:/
 git submodule update --init
 ```
 
+The Docker image does not include `public/ai`. In production the reverse proxy serves `/ai/` from a checkout of MOSes_Models (see `public/ai/README.md`).
+
 Install dependencies:
 
 ```sh
