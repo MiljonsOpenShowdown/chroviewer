@@ -1,0 +1,3 @@
+[submodule "public/ai"]
+	path = public/ai
+	url = https://github.com/MiljonsOpenShowdown/MOSes_Models.git

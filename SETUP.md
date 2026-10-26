@@ -35,6 +35,12 @@ pnpm exec vp dev
 
 ## Run ChroViewer
 
+The AI Play models live in a separate private repository ([MOSes_Models](https://github.com/MiljonsOpenShowdown/MOSes_Models)), checked out as a submodule at `public/ai`. Fetch it if you have access (without it, AI Play stays disabled):
+
+```sh
+git submodule update --init
+```
+
 Install dependencies:
 
 ```sh
