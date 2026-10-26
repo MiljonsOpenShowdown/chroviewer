@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 
 type TransportPanel = 'speed' | 'lights' | 'camera' | 'volume';
 
-// CyberHawk "AI Play" button: right of Play, playback mode only. Active while
+// MOSes "AI Play" button: right of Play, playback mode only. Active while
 // the AI plays, when it stops the AI.
 export interface TransportAiPlay {
   active: boolean;

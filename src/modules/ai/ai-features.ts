@@ -1,5 +1,5 @@
 // Model inputs for the built-in AI. Port of the inference half of
-// pTrainer/replay_ai/features.py (CyberHawk); keep the two in step, the
+// pTrainer/replay_ai/features.py (MOSes); keep the two in step, the
 // exported model only understands features built exactly this way.
 
 import { item } from './ai-util';

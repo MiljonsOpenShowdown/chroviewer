@@ -24,7 +24,7 @@ import { aiMapData } from './ai-map';
 import { AiStreamBuilder } from './ai-stream';
 import { item } from './ai-util';
 
-// Golden vectors come from the Python reference (CyberHawk:
+// Golden vectors come from the Python reference (MOSes:
 // `python -m replay_ai.export_golden`), using the same public/ai/model.onnx.
 
 interface Golden {

@@ -1,7 +1,7 @@
 // Turns generated AI motion into a live replay stream: scores each note in the
 // sim once the frames around it exist, then cuts 250 ms ReplayChunks that are
 // only released when everything before their end time is final. Port of
-// CyberHawk's pTrainer/ludus_mock/ai_play.py + server.py chunk slicing.
+// MOSes's pTrainer/ludus_mock/ai_play.py + server.py chunk slicing.
 
 import { create, type MessageInitShape, toBinary } from '@bufbuild/protobuf';
 

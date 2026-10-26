@@ -1,4 +1,4 @@
-// Saber/note cut simulation for AI play. Port of CyberHawk's
+// Saber/note cut simulation for AI play. Port of MOSes's
 // pTrainer/sim/{cut_sim,note_motion,scoring}.py and preprocessor.resample_frames,
 // which reproduce the game's cut pipeline (validated against real replays).
 // Keep in step with those files.
