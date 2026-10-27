@@ -193,20 +193,27 @@ export function createBasicLightTimeline(source: BasicEvent[]): BasicLightTimeli
   };
 }
 
-function sampleGradient(gradients: ChromaGradient[], stateBeat: number, beat: number): ChromaColor | undefined {
+/** The gradient an event at `stateBeat` follows: the last one covering it. */
+function gradientAt(gradients: ChromaGradient[], stateBeat: number) {
   for (let index = gradients.length - 1; index >= 0; index--) {
     const gradient = gradients[index];
     if (gradient === undefined || stateBeat < gradient.startBeat || stateBeat > gradient.endBeat) continue;
-    const duration = gradient.endBeat - gradient.startBeat;
-    const time = gradient.easing(duration <= 0 ? 1 : clamp01((beat - gradient.startBeat) / duration));
-    return [
-      lerp(gradient.startColor[0], gradient.endColor[0], time),
-      lerp(gradient.startColor[1], gradient.endColor[1], time),
-      lerp(gradient.startColor[2], gradient.endColor[2], time),
-      lerp(gradient.startColor[3], gradient.endColor[3], time),
-    ];
+    return gradient;
   }
   return undefined;
+}
+
+function sampleGradient(gradients: ChromaGradient[], stateBeat: number, beat: number): ChromaColor | undefined {
+  const gradient = gradientAt(gradients, stateBeat);
+  if (gradient === undefined) return undefined;
+  const duration = gradient.endBeat - gradient.startBeat;
+  const time = gradient.easing(duration <= 0 ? 1 : clamp01((beat - gradient.startBeat) / duration));
+  return [
+    lerp(gradient.startColor[0], gradient.endColor[0], time),
+    lerp(gradient.startColor[1], gradient.endColor[1], time),
+    lerp(gradient.startColor[2], gradient.endColor[2], time),
+    lerp(gradient.startColor[3], gradient.endColor[3], time),
+  ];
 }
 
 export function sampleBasicLightTimeline(
@@ -301,6 +308,33 @@ export function sampleBasicLightTimeline(
   if (customAlpha !== undefined) sample.customAlpha = customAlpha;
   if (isFade(event.value)) sample.fading = true;
   return sample;
+}
+
+/**
+ * Until when (beat) sampleBasicLightTimeline keeps giving what it gives at
+ * `beat`: the next event. NaN while it changes with time, through a
+ * transition to the next event, a flash or fade, or a Chroma gradient.
+ * Keep in step with sampleBasicLightTimeline.
+ */
+export function basicLightSettledUntil(timeline: BasicLightTimeline, beat: number, songBpm: number) {
+  const events = timeline.events;
+  const index = eventIndexAt(events, beat);
+  const next = events[index + 1];
+  const nextBeat = next?.songBpmTime ?? Number.POSITIVE_INFINITY;
+  if (index < 0) return nextBeat;
+  const event = events[index];
+  if (event === undefined) return Number.NaN;
+  if (next !== undefined && isTransition(next.value) && canTransition(event.value)) return Number.NaN;
+  // The same clamped times sampleBasicLightTimeline eases: settled once they reach 1
+  const elapsed = beat - event.songBpmTime;
+  if (isFlash(event.value) && clamp01(elapsed / ((0.6 * songBpm) / 60)) !== 1) return Number.NaN;
+  if (isFade(event.value) && clamp01(elapsed / ((1.5 * songBpm) / 60)) !== 1) return Number.NaN;
+  const gradient = gradientAt(timeline.gradients, event.songBpmTime);
+  if (gradient !== undefined) {
+    const duration = gradient.endBeat - gradient.startBeat;
+    if (!(duration <= 0) && clamp01((beat - gradient.startBeat) / duration) !== 1) return Number.NaN;
+  }
+  return nextBeat;
 }
 
 export function boostAt(events: BasicEvent[], beat: number) {

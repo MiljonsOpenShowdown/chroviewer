@@ -268,9 +268,24 @@ function addParametricLights(
                 : (currentLength + (controller.AddWidthToLength === 0 ? 0 : controller.Width)) * lengthFactor;
             const height = Math.min(fullHeight, currentCollisionLength);
             if (box.UpdateTransform !== 0) {
-              lightTransform.scale.set(width * 0.5, height * 0.5, width * 0.5);
-              lightTransform.position.set(0, (0.5 - controller.Center) * height, 0);
-              lightTransform.updateMatrix();
+              const { position, scale } = lightTransform;
+              const halfWidth = width * 0.5;
+              const halfHeight = height * 0.5;
+              const y = (0.5 - controller.Center) * height;
+              // Runs every frame for every box light: skipped while it would change nothing,
+              // which also spares the world matrices below it
+              if (
+                !Object.is(scale.x, halfWidth) ||
+                !Object.is(scale.y, halfHeight) ||
+                !Object.is(scale.z, halfWidth) ||
+                !Object.is(position.x, 0) ||
+                !Object.is(position.y, y) ||
+                !Object.is(position.z, 0)
+              ) {
+                scale.set(halfWidth, halfHeight, halfWidth);
+                position.set(0, y, 0);
+                lightTransform.updateMatrix();
+              }
             }
             const alphaStart = controller.OverrideChildrenAlpha === 0 ? box.AlphaStart : currentStartAlpha;
             const alphaEnd = controller.OverrideChildrenAlpha === 0 ? box.AlphaEnd : controller.EndAlpha;

@@ -5,6 +5,7 @@ import { createBpmConverter, songBpmTimeToSeconds } from '../../core/beatmap/bpm
 import type { EventBox, LightColorEvent } from '../../core/beatmap/types';
 import { DEFAULT_COLORS, resolveColorScheme, type ColorScheme, type Rgb } from '../../core/colors';
 import {
+  basicLightSettledUntil,
   boostAt,
   createBasicLightTimeline,
   GAME_LIGHT_BOOST_NORMAL_ALPHA,
@@ -21,7 +22,12 @@ import {
   type LightshowMode,
 } from '../../core/lighting/basic-light';
 import { expandGlsEvents } from '../../core/lighting/gls-events';
-import { glsColorTween, sampleGlsColorTween } from '../../core/lighting/gls-sampling';
+import {
+  glsColorSettledUntil,
+  glsColorTween,
+  sampleGlsColorTween,
+  type GlsColorSample,
+} from '../../core/lighting/gls-sampling';
 import type { MapRenderData } from '../../core/placement/map-render-data';
 import { evaluateAnimationCurve } from '../environment/animation-curve';
 import type {
@@ -36,13 +42,23 @@ import { lightBindingKey, rebuildEnvironmentLightEventCache } from './environmen
 import { EnvironmentTransformRuntime } from './environment-transform-runtime';
 import { menuLightshowRandom } from './menu-lightshow';
 
+// `settled` is the sampled tween, still valid for beats from `settledFrom` until `settledUntil` in `settledGeneration`
 interface GlsColorSource {
   tween: ReturnType<typeof glsColorTween>;
+  settled?: GlsColorSample;
+  settledFrom: number;
+  settledUntil: number;
+  settledGeneration: number;
 }
 
 interface GlsColorRuntime {
   target: EnvironmentGlsColorTarget;
   source: GlsColorSource;
+  // The target's last transformed light, kept while its sample and the brightness stay the same
+  controlled?: ReturnType<EnvironmentGlsColorTarget['transform']>;
+  controlledSample?: GlsColorSample;
+  controlledBrightness: number;
+  directMaterials: GlsDirectMaterial[];
   initialVisible?: boolean;
   initialMaterials: {
     material: ShaderMaterial;
@@ -51,6 +67,15 @@ interface GlsColorRuntime {
     alpha?: number;
     multiplier?: number;
   }[];
+}
+
+/** A material a GLS color target sets directly, with its uniforms looked up once. */
+interface GlsDirectMaterial {
+  material: ShaderMaterial;
+  colorProperty: string;
+  alphaProperty: string;
+  uniforms: MaterialLightUniforms;
+  controlled: ControlledLight;
 }
 
 /** A material's light uniforms, looked up once instead of by name every frame. */
@@ -63,8 +88,17 @@ interface MaterialLightUniforms {
 /** A material light's materials with their uniforms, so each frame skips the per-material lookups. */
 interface LightMaterialUniforms {
   colorProperty: string;
+  alphaProperty: string;
   materials: ShaderMaterial[];
   uniforms: MaterialLightUniforms[];
+}
+
+/** A light's sample, still valid for beats from `from` until `until` while nothing else changed. */
+interface SettledLightSample {
+  sampled: ControlledLight | null;
+  from: number;
+  until: number;
+  generation: number;
 }
 
 const alphaUniformNames = new Map<string, string>();
@@ -146,13 +180,7 @@ export class EnvironmentLightRuntime {
   >();
   private readonly glsMaterialLights = new Map<LoadedEnvironment['materialLights'][number], ControlledLight>();
   private readonly glsColorSamples = new Map<GlsColorSource, ReturnType<typeof sampleGlsColorTween>>();
-  private readonly glsDirectMaterials = new Map<
-    ShaderMaterial,
-    {
-      controlled: ControlledLight;
-      colorProperty: string;
-    }
-  >();
+  private readonly glsDirectMaterials = new Map<ShaderMaterial, GlsDirectMaterial>();
   private readonly lightEventsByType = new Map<number, MapRenderData['lightEvents']>();
   private readonly lightEventsByBinding = new Map<EnvironmentLightBinding, MapRenderData['lightEvents']>();
   private readonly lightEventsByBindingKey = new Map<string, MapRenderData['lightEvents']>();
@@ -183,6 +211,11 @@ export class EnvironmentLightRuntime {
   private basicLightSampleSongBpm = Number.NaN;
   private basicLightSampleMode?: LightshowMode;
   private basicLightSampleColors?: ColorScheme;
+  // Bumped when anything but the beat changes what lights sample, which drops the settled samples
+  private sampleGeneration = 0;
+  // By index in environment.materialLights and environment.lightSegments
+  private readonly settledMaterialSamples: (SettledLightSample | undefined)[] = [];
+  private readonly settledSegmentSamples: (SettledLightSample | undefined)[] = [];
 
   setEnvironment(environment: LoadedEnvironment) {
     this.environment = environment;
@@ -296,6 +329,9 @@ export class EnvironmentLightRuntime {
 
   private rebuildRuntime() {
     this.glsColorRuntime = [];
+    this.glsSegments.clear();
+    this.glsMaterialLights.clear();
+    this.glsDirectMaterials.clear();
     const data = this.data;
     const environment = this.environment;
     if (environment === null) {
@@ -348,12 +384,24 @@ export class EnvironmentLightRuntime {
         if (source === undefined) {
           source = {
             tween: glsColorTween(expandedByElement.get(target.id) ?? [], this.jsonTimeToSongBpmTime),
+            settledFrom: Number.NaN,
+            settledUntil: Number.NaN,
+            settledGeneration: -1,
           };
           glsColorSources.set(sourceKey, source);
         }
         this.glsColorRuntime.push({
           target,
           source,
+          controlledBrightness: Number.NaN,
+          directMaterials: target.materials.map((material) => ({
+            material,
+            colorProperty: target.colorProperty,
+            alphaProperty: alphaUniformName(target.colorProperty),
+            uniforms: this.materialLightUniforms(material, target.colorProperty),
+            // Set every frame before it is read
+            controlled: { color: [0, 0, 0], alpha: 0 },
+          })),
           initialVisible: target.node?.visible,
           initialMaterials: target.materials.map((material) => {
             const color = shaderColorUniform(material, target.colorProperty);
@@ -379,34 +427,44 @@ export class EnvironmentLightRuntime {
   }
 
   private updateGlsColors(beat: number, boosted: boolean, full: boolean) {
-    this.glsSegments.clear();
-    this.glsMaterialLights.clear();
-    this.glsDirectMaterials.clear();
     this.glsColorSamples.clear();
     if (full) {
+      // The same runtimes set the same targets in the same order every frame, so
+      // overwriting leaves the maps as clearing and filling them again would
       const samples = this.glsColorSamples;
       for (const runtime of this.glsColorRuntime) {
         let sample = samples.get(runtime.source);
         if (sample === undefined) {
-          sample = sampleGlsColorTween(runtime.source.tween, beat, this.colors, boosted);
+          sample = this.sampleGlsColorSource(runtime.source, beat, boosted);
           samples.set(runtime.source, sample);
         }
-        const controlled = runtime.target.transform(sample.color, sample.alpha * this.lightBrightness);
+        let controlled = runtime.controlled;
+        if (
+          controlled === undefined ||
+          runtime.controlledSample !== sample ||
+          runtime.controlledBrightness !== this.lightBrightness
+        ) {
+          controlled = runtime.target.transform(sample.color, sample.alpha * this.lightBrightness);
+          runtime.controlled = controlled;
+          runtime.controlledSample = sample;
+          runtime.controlledBrightness = this.lightBrightness;
+        }
         if (runtime.target.node !== undefined) {
           runtime.target.node.visible = runtime.initialVisible !== false && controlled.visible;
         }
         for (const segment of runtime.target.segments) this.glsSegments.set(segment, controlled);
         for (const light of runtime.target.materialLights) this.glsMaterialLights.set(light, controlled);
-        for (const material of runtime.target.materials) {
-          this.glsDirectMaterials.set(material, {
-            controlled,
-            colorProperty: runtime.target.colorProperty,
-          });
+        for (const direct of runtime.directMaterials) {
+          direct.controlled = controlled;
+          this.glsDirectMaterials.set(direct.material, direct);
         }
       }
       return;
     }
 
+    this.glsSegments.clear();
+    this.glsMaterialLights.clear();
+    this.glsDirectMaterials.clear();
     for (const runtime of this.glsColorRuntime) {
       if (runtime.target.node !== undefined && runtime.initialVisible !== undefined) {
         runtime.target.node.visible = runtime.initialVisible;
@@ -431,7 +489,7 @@ export class EnvironmentLightRuntime {
       if (output === undefined) continue;
       output.intensityMultiplier = segment.intensityMultiplier;
       const gls = this.glsSegments.get(segment);
-      if (gls === undefined) this.sampleLightSegment(segment, output, beat, boosted, songBpm);
+      if (gls === undefined) this.sampleLightSegment(segment, index, output, beat, boosted, songBpm);
       else {
         output.color = gls.color;
         output.alpha = segment.alpha * gls.alpha;
@@ -455,12 +513,14 @@ export class EnvironmentLightRuntime {
     if (environment === null) return;
     // Runs for every light material of every tile each frame (thousands in V3
     // environments like Collider), so it avoids per-material lookups and objects.
-    for (const light of environment.materialLights) {
+    for (let lightIndex = 0; lightIndex < environment.materialLights.length; lightIndex++) {
+      const light = environment.materialLights[lightIndex];
+      if (light === undefined) continue;
       const gls = this.glsMaterialLights.get(light);
       const sampled =
         gls ??
         (light.combined === undefined
-          ? this.sampleEnvironmentLight(light.bindings, beat, boosted, songBpm)
+          ? this.sampleSettledLight(this.settledMaterialSamples, lightIndex, light.bindings, beat, boosted, songBpm)
           : this.sampleCombinedMaterialLight(light.combined, beat, boosted, songBpm));
       if (sampled === null) continue;
       let color: Rgb;
@@ -491,9 +551,11 @@ export class EnvironmentLightRuntime {
           uniforms = this.materialLightUniforms(material, cached.colorProperty);
           cached.materials[index] = material;
           cached.uniforms[index] = uniforms;
-        } else if (uniforms.color === undefined || uniforms.alpha === undefined || uniforms.multiplier === undefined) {
+        } else {
           // Looked up again while one is missing, as materialLightUniforms does
-          uniforms = this.materialLightUniforms(material, cached.colorProperty);
+          uniforms.color ??= material.uniforms[cached.colorProperty];
+          uniforms.alpha ??= material.uniforms[cached.alphaProperty];
+          uniforms.multiplier ??= material.uniforms._ColorMultiplier;
         }
         if (setColor) writeColorUniform(uniforms.color, color);
         if (setAlpha) {
@@ -502,8 +564,11 @@ export class EnvironmentLightRuntime {
         }
       }
     }
-    for (const [material, { controlled, colorProperty }] of this.glsDirectMaterials) {
-      const uniforms = this.materialLightUniforms(material, colorProperty);
+    for (const { material, colorProperty, alphaProperty, uniforms, controlled } of this.glsDirectMaterials.values()) {
+      // Looked up again while one is missing, as materialLightUniforms does
+      uniforms.color ??= material.uniforms[colorProperty];
+      uniforms.alpha ??= material.uniforms[alphaProperty];
+      uniforms.multiplier ??= material.uniforms._ColorMultiplier;
       writeColorUniform(uniforms.color, controlled.color);
       writeNumberUniform(uniforms.alpha, controlled.alpha);
       writeNumberUniform(uniforms.multiplier, controlled.alpha);
@@ -522,7 +587,7 @@ export class EnvironmentLightRuntime {
       cached.colorProperty !== colorProperty ||
       cached.materials.length !== light.materials.length
     ) {
-      cached = { colorProperty, materials: [], uniforms: [] };
+      cached = { colorProperty, alphaProperty: alphaUniformName(colorProperty), materials: [], uniforms: [] };
       this.lightMaterialUniforms.set(light, cached);
     }
     return cached;
@@ -599,17 +664,92 @@ export class EnvironmentLightRuntime {
     return { color, alpha, visible: true };
   }
 
+  /** sampleGlsColorTween, kept from earlier frames while the tween holds (most do, most of the time). */
+  private sampleGlsColorSource(source: GlsColorSource, beat: number, boosted: boolean) {
+    if (
+      source.settled !== undefined &&
+      source.settledGeneration === this.sampleGeneration &&
+      source.settledFrom <= beat &&
+      beat < source.settledUntil
+    ) {
+      return source.settled;
+    }
+    const sample = sampleGlsColorTween(source.tween, beat, this.colors, boosted);
+    source.settled = sample;
+    source.settledFrom = beat;
+    source.settledUntil = glsColorSettledUntil(source.tween, beat);
+    source.settledGeneration = this.sampleGeneration;
+    return sample;
+  }
+
   private sampleLightSegment(
     segment: EnvironmentLightSegment,
+    index: number,
     output: EnvironmentLightSegment,
     beat: number,
     boosted: boolean,
     songBpm: number,
   ) {
-    const sampled = this.sampleEnvironmentLight(segment.bindings, beat, boosted, songBpm);
+    const sampled = this.sampleSettledLight(
+      this.settledSegmentSamples,
+      index,
+      segment.bindings,
+      beat,
+      boosted,
+      songBpm,
+    );
     output.color = sampled?.color ?? segment.color;
     output.alpha =
       sampled === null ? (this.lightshowMode === 'none' ? 0 : segment.alpha) : segment.alpha * sampled.alpha;
+  }
+
+  /**
+   * sampleEnvironmentLight, kept from earlier frames while every binding's
+   * timeline is settled (no flash, fade, transition or gradient running) and no
+   * event comes up. Most lights sit still most of the time, so most frames skip
+   * sampling. Not for the menu lightshow, which changes every frame.
+   */
+  private sampleSettledLight(
+    cache: (SettledLightSample | undefined)[],
+    index: number,
+    bindings: EnvironmentLightBinding[],
+    beat: number,
+    boosted: boolean,
+    songBpm: number,
+  ) {
+    const cached = cache[index];
+    if (
+      cached !== undefined &&
+      cached.generation === this.sampleGeneration &&
+      cached.from <= beat &&
+      beat < cached.until
+    ) {
+      return cached.sampled;
+    }
+    const sampled = this.sampleEnvironmentLight(bindings, beat, boosted, songBpm);
+    if (this.data === null) return sampled;
+    let until = Number.POSITIVE_INFINITY;
+    for (const binding of bindings) {
+      // The base timeline picks the binding, the lightshow mode's one gives the sample
+      const base = this.timelineForBinding(binding);
+      const timeline = lightTimelineForMode(this.lightshowMode, base);
+      until = Math.min(until, basicLightSettledUntil(base, beat, songBpm));
+      if (timeline !== base) until = Math.min(until, basicLightSettledUntil(timeline, beat, songBpm));
+    }
+    // NaN (still changing) fails this too
+    if (!(until > beat)) {
+      if (cached !== undefined) cached.generation = -1;
+      return sampled;
+    }
+    if (cached === undefined) {
+      cache[index] = { sampled, from: beat, until, generation: this.sampleGeneration };
+    } else {
+      cached.sampled = sampled;
+      cached.from = beat;
+      cached.until = until;
+      cached.generation = this.sampleGeneration;
+    }
+    return sampled;
   }
 
   private sampleEnvironmentLight(bindings: EnvironmentLightBinding[], beat: number, boosted: boolean, songBpm: number) {
@@ -777,6 +917,14 @@ export class EnvironmentLightRuntime {
       this.basicLightSampleColors === this.colors
     ) {
       return;
+    }
+    if (
+      this.basicLightSampleBoosted !== boosted ||
+      this.basicLightSampleSongBpm !== songBpm ||
+      this.basicLightSampleMode !== this.lightshowMode ||
+      this.basicLightSampleColors !== this.colors
+    ) {
+      this.sampleGeneration++;
     }
     this.basicLightSampleBeat = beat;
     this.basicLightSampleBoosted = boosted;

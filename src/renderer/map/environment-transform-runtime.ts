@@ -11,6 +11,7 @@ import { expandGlsEvents } from '../../core/lighting/gls-events';
 import {
   floatFxTween,
   glsRotationTween,
+  glsTweenSettledUntil,
   sampleGlsFloat,
   sampleGlsRotationTween,
   translationTween,
@@ -33,16 +34,23 @@ import type {
 } from '../environment/environment-runtime';
 import { menuLightshowRandom } from './menu-lightshow';
 
+// `settled` is the sampled rotation or translation, still valid for beats from `settledFrom` until `settledUntil`
 interface GlsRotationRuntime {
   entry: EnvironmentGlsTransformEntry;
   tween: ReturnType<typeof glsRotationTween>;
   initial: { target: Object3D; value: Quaternion }[];
+  settled: Quaternion;
+  settledFrom: number;
+  settledUntil: number;
 }
 
 interface GlsTranslationRuntime {
   entry: EnvironmentGlsTransformEntry;
   tween: ReturnType<typeof translationTween>;
   initial: { target: Object3D; value: Vector3 }[];
+  settled: number;
+  settledFrom: number;
+  settledUntil: number;
 }
 
 interface GlsFxRuntime {
@@ -67,6 +75,19 @@ interface RotationRuntime {
 
 const zAxis = new Vector3(0, 0, 1);
 const degToRad = Math.PI / 180;
+
+/**
+ * Object.is per component, so writing would change nothing, not even the sign
+ * of a zero. Skipping those targets skips their matrix and world matrix updates.
+ */
+function sameQuaternion(target: Quaternion, value: Quaternion) {
+  return (
+    Object.is(target.x, value.x) &&
+    Object.is(target.y, value.y) &&
+    Object.is(target.z, value.z) &&
+    Object.is(target.w, value.w)
+  );
+}
 
 export class EnvironmentTransformRuntime {
   private readonly rotationQuaternion = new Quaternion();
@@ -151,6 +172,9 @@ export class EnvironmentTransformRuntime {
             jsonTimeToSongBpmTime,
           ),
           initial: entry.targets.map((target) => ({ target, value: target.quaternion.clone() })),
+          settled: new Quaternion(),
+          settledFrom: Number.NaN,
+          settledUntil: Number.NaN,
         });
       }
     }
@@ -171,6 +195,9 @@ export class EnvironmentTransformRuntime {
           entry,
           tween: translationTween(events, jsonTimeToSongBpmTime, limits, distributionLimits, entry.mirrored),
           initial: entry.targets.map((target) => ({ target, value: target.position.clone() })),
+          settled: 0,
+          settledFrom: Number.NaN,
+          settledUntil: Number.NaN,
         });
       }
     }
@@ -246,18 +273,27 @@ export class EnvironmentTransformRuntime {
       const firstEventTime = runtime.tween[0]?.time;
       if (!full || firstEventTime === undefined || beat < firstEventTime) {
         for (const { target, value } of runtime.initial) {
+          if (sameQuaternion(target.quaternion, value)) continue;
           target.quaternion.copy(value);
           changed.add(target);
         }
         continue;
       }
-      let angle = sampleGlsRotationTween(runtime.tween, beat);
-      if (runtime.entry.mirrored) angle *= -1;
-      const axis = runtime.entry.axis;
-      this.rotationAxis.set(axis === 0 ? -1 : 0, axis === 1 ? -1 : 0, axis === 2 ? 1 : 0);
-      this.rotationQuaternion.setFromAxisAngle(this.rotationAxis, angle * degToRad);
+      // Most entries hold still most of the time: reuse the last rotation while it holds
+      const rotation = runtime.settled;
+      if (!(runtime.settledFrom <= beat && beat < runtime.settledUntil)) {
+        let angle = sampleGlsRotationTween(runtime.tween, beat);
+        if (runtime.entry.mirrored) angle *= -1;
+        const axis = runtime.entry.axis;
+        this.rotationAxis.set(axis === 0 ? -1 : 0, axis === 1 ? -1 : 0, axis === 2 ? 1 : 0);
+        rotation.setFromAxisAngle(this.rotationAxis, angle * degToRad);
+        runtime.settledFrom = beat;
+        runtime.settledUntil = glsTweenSettledUntil(runtime.tween, beat, true);
+      }
+      // Still written while settled: another entry or system may have turned the target since
       for (const target of runtime.entry.targets) {
-        target.quaternion.copy(this.rotationQuaternion);
+        if (sameQuaternion(target.quaternion, rotation)) continue;
+        target.quaternion.copy(rotation);
         changed.add(target);
       }
     }
@@ -265,16 +301,27 @@ export class EnvironmentTransformRuntime {
       const firstEventTime = runtime.tween[0]?.time;
       if (!full || firstEventTime === undefined || beat < firstEventTime) {
         for (const { target, value } of runtime.initial) {
-          target.position.copy(value);
+          const position = target.position;
+          if (Object.is(position.x, value.x) && Object.is(position.y, value.y) && Object.is(position.z, value.z)) {
+            continue;
+          }
+          position.copy(value);
           changed.add(target);
         }
         continue;
       }
-      const value = sampleGlsFloat(runtime.tween, beat);
+      if (!(runtime.settledFrom <= beat && beat < runtime.settledUntil)) {
+        runtime.settled = sampleGlsFloat(runtime.tween, beat);
+        runtime.settledFrom = beat;
+        runtime.settledUntil = glsTweenSettledUntil(runtime.tween, beat, false);
+      }
+      const value = runtime.settled;
+      const axis = runtime.entry.axis;
+      const component = axis === 0 ? 'x' : axis === 1 ? 'y' : 'z';
+      const written = axis === 0 || axis === 1 ? value : -value;
       for (const target of runtime.entry.targets) {
-        if (runtime.entry.axis === 0) target.position.x = value;
-        else if (runtime.entry.axis === 1) target.position.y = value;
-        else target.position.z = -value;
+        if (Object.is(target.position[component], written)) continue;
+        target.position[component] = written;
         changed.add(target);
       }
     }

@@ -56,7 +56,19 @@ function glsColor(color: number, scheme: ColorScheme, boost: boolean): Rgb {
   return boost ? scheme.environmentLeftBoost : scheme.environmentLeft;
 }
 
-function previousColorState(states: GlsColorTweenEvent[], index: number, initial: GlsColorTweenEvent) {
+// What a tween starts from before its first event, or with no earlier event to reuse
+const INITIAL_COLOR_STATE: Readonly<GlsColorTweenEvent> = {
+  time: Number.NEGATIVE_INFINITY,
+  color: 0,
+  brightness: 0,
+  easing: -1,
+  usePrevious: 0,
+  frequency: 0,
+  strobeBrightness: 0,
+  strobeFade: 0,
+};
+
+function previousColorState(states: GlsColorTweenEvent[], index: number, initial: Readonly<GlsColorTweenEvent>) {
   for (let i = index; i >= 0; i -= 1) {
     const state = states[i];
     if (state !== undefined && state.usePrevious !== 1) return state;
@@ -86,16 +98,7 @@ export function sampleGlsColorTween(
   scheme: ColorScheme,
   boost: boolean,
 ): GlsColorSample {
-  const initial: GlsColorTweenEvent = {
-    time: Number.NEGATIVE_INFINITY,
-    color: 0,
-    brightness: 0,
-    easing: -1,
-    usePrevious: 0,
-    frequency: 0,
-    strobeBrightness: 0,
-    strobeFade: 0,
-  };
+  const initial = INITIAL_COLOR_STATE;
   const index = lastIndexAtOrBefore(states, time);
   if (index < 0) return { color: glsColor(initial.color, scheme, boost), alpha: 0 };
   const current = states[index];
@@ -125,6 +128,27 @@ export function sampleGlsColorTween(
   return { color, alpha: half > 0.5 ? strobeBrightness : alpha };
 }
 
+/**
+ * Until when (beat) sampleGlsColorTween keeps giving what it gives at `time`:
+ * while no next event comes, or the next one is a step without strobing.
+ * NaN while it changes. Keep in step with sampleGlsColorTween.
+ */
+export function glsColorSettledUntil(states: GlsColorTweenEvent[], time: number) {
+  const index = lastIndexAtOrBefore(states, time);
+  if (index < 0) return states[0]?.time ?? Number.POSITIVE_INFINITY;
+  const current = states[index];
+  const rawNext = states[index + 1];
+  if (current === undefined) return Number.NaN;
+  if (rawNext === undefined) return Number.POSITIVE_INFINITY;
+  const start = current.usePrevious === 1 ? previousColorState(states, index - 1, INITIAL_COLOR_STATE) : current;
+  const end = rawNext.usePrevious === 1 ? start : rawNext;
+  const duration = rawNext.time - current.time;
+  // A step keeps the end's strobe frequency at the start's
+  if (end.easing !== -1 || start.frequency > 0 || !(duration > 0)) return Number.NaN;
+  // The step's progress can round up to 1 just before the next event, so stop a hair early
+  return current.time + duration * (1 - 1e-6);
+}
+
 export function sampleGlsFloat(events: TweenEvent[], time: number, initial = 0) {
   const index = lastIndexAtOrBefore(events, time);
   if (index < 0) return initial;
@@ -147,6 +171,25 @@ export function sampleGlsFloat(events: TweenEvent[], time: number, initial = 0) 
   const duration = next.time - current.time;
   const progress = duration <= 0 ? 1 : clamp01((time - current.time) / duration);
   return lerp(start, end, easingFromId(next.easing)(progress));
+}
+
+/**
+ * Until when (beat) sampleGlsFloat, or sampleGlsRotationTween with `rotation`,
+ * keeps giving what it gives at `time`: while no next event comes, or the next
+ * one is a step. NaN while it moves. Keep in step with both samplers.
+ */
+export function glsTweenSettledUntil(events: readonly TweenEvent[], time: number, rotation: boolean) {
+  const index = lastIndexAtOrBefore(events, time);
+  if (index < 0) return events[0]?.time ?? Number.POSITIVE_INFINITY;
+  const current = events[index];
+  const next = events[index + 1];
+  if (current === undefined) return Number.NaN;
+  if (next === undefined) return Number.POSITIVE_INFINITY;
+  if (rotation && next.usePrevious === 1) return next.time;
+  const duration = next.time - current.time;
+  if (next.easing !== -1 || !(duration > 0)) return Number.NaN;
+  // The step's progress can round up to 1 just before the next event, so stop a hair early
+  return current.time + duration * (1 - 1e-6);
 }
 
 export function floatFxTween(
