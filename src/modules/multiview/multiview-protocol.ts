@@ -1,3 +1,5 @@
+import type { MultiviewRenderStats } from '../../renderer/multiview-renderer-host';
+
 export interface MultiviewPlayerConfig {
   id: string;
   playerId: string;
@@ -68,5 +70,11 @@ export interface MultiviewStateMessage {
 
 export interface MultiviewReadyMessage {
   type: 'beatkhana:multiview-ready';
+  version: 1;
+}
+
+/** Once a second, how the shared renderer keeps up, for profiling in the parent page. */
+export interface MultiviewPerfMessage extends MultiviewRenderStats {
+  type: 'beatkhana:multiview-perf';
   version: 1;
 }

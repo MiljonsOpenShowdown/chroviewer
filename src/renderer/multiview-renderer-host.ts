@@ -27,6 +27,25 @@ export interface SharedViewerLifecycle {
   setRenderScale(scale: number): void;
 }
 
+/** How the shared renderer kept up since the last `takeStats`, for profiling in the embedding page. */
+export interface MultiviewRenderStats {
+  /** requestAnimationFrame callbacks per second: the browser's own frame rate. */
+  rafFps: number;
+  /** Frames rendered per second, after the maxFps cap. */
+  fps: number;
+  /** CPU time per rendered frame. WebGL calls only queue GPU work unless the GPU stalls them. */
+  cpuMsAvg: number;
+  cpuMsMax: number;
+  /** Longest gap between two rendered frames. */
+  maxGapMs: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  /** Pixels rendered per frame over all visible tiles, at their render scale. */
+  renderPixels: number;
+  /** The GPU WebGL runs on, e.g. SwiftShader when it fell back to software. */
+  glRenderer: string;
+}
+
 export function multiviewFrameRate(entries: Iterable<{ performance: RenderPerformanceOptions }>) {
   let rate: number | null = null;
   for (const entry of entries) {
@@ -48,6 +67,15 @@ export class MultiviewRendererHost {
   private height = -1;
   private readonly visibleEntries: Entry[] = [];
   private entriesChanged = true;
+  private readonly glRenderer: string;
+  private statsSince = performance.now();
+  private statTicks = 0;
+  private statFrames = 0;
+  private statCpuMs = 0;
+  private statCpuMsMax = 0;
+  private statGapMsMax = 0;
+  private lastRenderAt = 0;
+  private renderPixels = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({
@@ -63,6 +91,7 @@ export class MultiviewRendererHost {
     });
     this.renderer.setPixelRatio(1);
     this.renderer.autoClear = false;
+    this.glRenderer = webglRendererName(this.renderer);
     canvas.addEventListener('webglcontextlost', this.handleContextLost);
     canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -159,6 +188,7 @@ export class MultiviewRendererHost {
     this.frameHandle = null;
     if (this.contextLost || document.hidden) return;
     this.scheduleFrame();
+    this.statTicks++;
     if (this.entriesChanged) {
       this.visibleEntries.length = 0;
       for (const entry of this.entries.values()) {
@@ -173,6 +203,10 @@ export class MultiviewRendererHost {
     const nextFrameAt = nextRenderDeadline(timestamp, this.nextFrameAt, maxFps);
     if (nextFrameAt === null) return;
     this.nextFrameAt = nextFrameAt;
+    const renderStart = performance.now();
+    if (this.lastRenderAt > 0) this.statGapMsMax = Math.max(this.statGapMsMax, timestamp - this.lastRenderAt);
+    this.lastRenderAt = timestamp;
+    let renderPixels = 0;
     this.renderer.setRenderTarget(null);
     this.renderer.setScissorTest(false);
     this.renderer.setClearColor(this.clearColor, 0);
@@ -195,6 +229,7 @@ export class MultiviewRendererHost {
         entry.sizedHeight = renderHeight;
         entry.view.setSize(renderWidth, renderHeight);
       }
+      renderPixels += renderWidth * renderHeight;
       entry.view.renderViewport(this.renderer, {
         x: tile.x,
         y: this.height - tile.y - tile.height,
@@ -204,7 +239,36 @@ export class MultiviewRendererHost {
         renderHeight,
       });
     }
+    const cpuMs = performance.now() - renderStart;
+    this.statFrames++;
+    this.statCpuMs += cpuMs;
+    this.statCpuMsMax = Math.max(this.statCpuMsMax, cpuMs);
+    this.renderPixels = renderPixels;
   };
+
+  /** The frame counters since the last call, which starts them over. */
+  takeStats(): MultiviewRenderStats {
+    const now = performance.now();
+    const seconds = Math.max(0.001, (now - this.statsSince) / 1000);
+    const stats: MultiviewRenderStats = {
+      rafFps: this.statTicks / seconds,
+      fps: this.statFrames / seconds,
+      cpuMsAvg: this.statFrames > 0 ? this.statCpuMs / this.statFrames : 0,
+      cpuMsMax: this.statCpuMsMax,
+      maxGapMs: this.statGapMsMax,
+      canvasWidth: this.width,
+      canvasHeight: this.height,
+      renderPixels: this.renderPixels,
+      glRenderer: this.glRenderer,
+    };
+    this.statsSince = now;
+    this.statTicks = 0;
+    this.statFrames = 0;
+    this.statCpuMs = 0;
+    this.statCpuMsMax = 0;
+    this.statGapMsMax = 0;
+    return stats;
+  }
 
   private scheduleFrame() {
     if (this.frameHandle !== null || this.contextLost || document.hidden) return;
@@ -248,5 +312,16 @@ export class MultiviewRendererHost {
     this.visibleEntries.length = 0;
     this.pendingTiles.clear();
     this.renderer.dispose();
+  }
+}
+
+/** The GPU's name as WebGL reports it, unmasked where the browser allows. */
+function webglRendererName(renderer: WebGLRenderer) {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(gl.getParameter(info === null ? gl.RENDERER : info.UNMASKED_RENDERER_WEBGL));
+  } catch {
+    return 'unknown';
   }
 }

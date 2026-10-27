@@ -10,6 +10,7 @@ import type { MultiviewPlaybackSnapshot, MultiviewTileProps } from '../viewer/vi
 import type {
   MultiviewConfigMessage,
   MultiviewControlMessage,
+  MultiviewPerfMessage,
   MultiviewPlayerConfig,
   MultiviewStateMessage,
 } from './multiview-protocol';
@@ -396,6 +397,19 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
     }, 100);
     return () => window.clearInterval(timer);
   }, [nativeBridge, players, timeline]);
+
+  // Once a second, how the shared renderer keeps up, for the parent's profiling.
+  // Not sent to the native compositor, which has no use for it.
+  useEffect(() => {
+    if (host === null || nativeBridge !== undefined) return;
+    const timer = window.setInterval(() => {
+      const origin = parentOriginRef.current;
+      if (origin === null) return;
+      const message: MultiviewPerfMessage = { type: 'beatkhana:multiview-perf', version: 1, ...host.takeStats() };
+      window.parent.postMessage(message, origin === 'null' ? '*' : origin);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [host, nativeBridge]);
 
   const handlePlayback = useCallback(
     (id: string, snapshot: MultiviewPlaybackSnapshot) => {
