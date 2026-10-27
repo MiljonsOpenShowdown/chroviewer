@@ -44,6 +44,8 @@ interface TimedEvent {
 interface PointEvent<T> extends TimedEvent {
   order: number;
   points: T[];
+  /** Some point reads a base provider or modifier, so it can change after the event ends. */
+  dynamic: boolean;
 }
 
 type VectorEvent = PointEvent<VectorPoint>;
@@ -79,6 +81,26 @@ interface TransformTarget {
   position: Vector3;
   rotation: Quaternion;
   scale: Vector3;
+  /**
+   * From `settledFrom` until `settledUntil` (beats) every track's latest event
+   * is over and no new one starts, so the transform stays as written. NaN
+   * while an event is running.
+   */
+  settledFrom: number;
+  settledUntil: number;
+  /** The local transform written last, to notice another system moving the target. */
+  writtenPosition: Vector3;
+  writtenRotation: Quaternion;
+  writtenScale: Vector3;
+  /** The parent's world matrix it was written against, set when a world-space track applies. */
+  parentWorld: Matrix4 | null;
+}
+
+/** A parent's world matrix inverted, worked out once per frame for all its tracked children. */
+interface ParentSpace {
+  frame: number;
+  inverseMatrix: Matrix4;
+  inverseRotation: Quaternion;
 }
 
 interface MaterialTarget {
@@ -136,7 +158,8 @@ function emptyComponentTrack(): ComponentTrackRuntime {
   };
 }
 
-function latestEvent<T extends { beat: number }>(events: readonly T[], beat: number) {
+/** Index of the last event started at `beat`, -1 before the first. */
+function latestEventIndex<T extends { beat: number }>(events: readonly T[], beat: number) {
   let low = 0;
   let high = events.length;
   while (low < high) {
@@ -144,7 +167,32 @@ function latestEvent<T extends { beat: number }>(events: readonly T[], beat: num
     if ((events[middle]?.beat ?? Number.POSITIVE_INFINITY) <= beat) low = middle + 1;
     else high = middle;
   }
-  return events[low - 1];
+  return low - 1;
+}
+
+function latestEvent<T extends { beat: number }>(events: readonly T[], beat: number) {
+  return events[latestEventIndex(events, beat)];
+}
+
+/** The beat from which an event gives its last value for good (eventProgress is 1). */
+function eventEnd(event: TimedEvent) {
+  return event.duration <= 0 ? event.beat : event.beat + event.duration * (event.repeat + 1);
+}
+
+/**
+ * Narrows `until` to where the events' latest one stays settled from `beat`:
+ * over, and nothing new starting. NaN when one is still running at `beat`.
+ */
+function settledUntil<T>(events: readonly PointEvent<T>[], beat: number, until: number) {
+  if (events.length === 0) return until;
+  const index = latestEventIndex(events, beat);
+  const event = events[index];
+  if (event !== undefined && (event.dynamic || beat < eventEnd(event))) return Number.NaN;
+  return Math.min(until, events[index + 1]?.beat ?? Number.POSITIVE_INFINITY);
+}
+
+function hasExpression(points: readonly { expression?: unknown }[]) {
+  return points.some((point) => point.expression !== undefined);
 }
 
 function sampleEvent<T, R>(
@@ -162,7 +210,7 @@ function sampleEvent<T, R>(
   );
 }
 
-function pointEvent<T>(
+function pointEvent<T extends { expression?: unknown }>(
   animation: ChromaTrackAnimation,
   points: T[] | undefined,
   order: number,
@@ -176,6 +224,7 @@ function pointEvent<T>(
         easing: animation.easing,
         order,
         points,
+        dynamic: hasExpression(points),
       };
 }
 
@@ -193,6 +242,7 @@ function componentEvent(
         easing: animation.easing,
         order,
         points,
+        dynamic: hasExpression(points),
       };
 }
 
@@ -242,9 +292,10 @@ function multiplyColor(left: Vector4Tuple | undefined, right: Vector4Tuple | und
   return [left[0] * right[0], left[1] * right[1], left[2] * right[2], left[3] * right[3]];
 }
 
-function mapPosition(value: Vector3Tuple, v2: boolean): Vector3Tuple {
+/** Sets `out` to a track position in scene space, without allocating (it runs per object per frame). */
+function setMappedPosition(out: Vector3, value: Vector3Tuple, v2: boolean) {
   const scale = v2 ? laneSize : 1;
-  return [value[0] * scale, value[1] * scale, -value[2] * scale];
+  return out.set(value[0] * scale, value[1] * scale, -value[2] * scale);
 }
 
 function newer(left: NumberEvent | undefined, right: NumberEvent | undefined) {
@@ -259,11 +310,12 @@ export class ChromaTrackRuntime {
   private readonly worldPosition = new Vector3();
   private readonly parentPosition = new Vector3();
   private readonly parentScale = new Vector3();
-  private readonly parentRotation = new Quaternion();
   private readonly targetRotation = new Quaternion();
   private readonly parentMatrix = new Matrix4();
   private readonly parentMatrixInverse = new Matrix4();
   private readonly noodleBasis = new Matrix4().makeScale(1, 1, -1);
+  private readonly parentSpaces = new Map<Object3D, ParentSpace>();
+  private frame = 0;
   private transformTargets: TransformTarget[] = [];
   private materialTargets: MaterialTarget[] = [];
   private tubeTargets: TubeTarget[] = [];
@@ -331,6 +383,12 @@ export class ChromaTrackRuntime {
       position: target.position.clone(),
       rotation: target.quaternion.clone(),
       scale: target.scale.clone(),
+      settledFrom: Number.NaN,
+      settledUntil: Number.NaN,
+      writtenPosition: new Vector3(),
+      writtenRotation: new Quaternion(),
+      writtenScale: new Vector3(),
+      parentWorld: null,
     }));
     this.transformTargets.sort((left, right) => targetDepth(left.target) - targetDepth(right.target));
 
@@ -372,6 +430,7 @@ export class ChromaTrackRuntime {
 
   clear() {
     this.tracks.clear();
+    this.parentSpaces.clear();
     this.componentTracks.clear();
     this.transformTargets = [];
     this.materialTargets = [];
@@ -418,13 +477,56 @@ export class ChromaTrackRuntime {
     return sampleEvent(event, beat, sampleNumber, context);
   }
 
+  /**
+   * The parent's world matrix inverted. Its world matrix is brought up to date
+   * once per frame: targets go parents first (by depth), so no later target in
+   * the frame moves it.
+   */
+  private parentSpace(parent: Object3D) {
+    let space = this.parentSpaces.get(parent);
+    if (space === undefined) {
+      space = { frame: -1, inverseMatrix: new Matrix4(), inverseRotation: new Quaternion() };
+      this.parentSpaces.set(parent, space);
+    }
+    if (space.frame !== this.frame) {
+      space.frame = this.frame;
+      parent.updateWorldMatrix(true, false);
+      parent.matrixWorld.decompose(this.parentPosition, space.inverseRotation, this.parentScale);
+      space.inverseRotation.invert();
+      space.inverseMatrix.copy(parent.matrixWorld).invert();
+    }
+    return space;
+  }
+
+  /** Nothing moved the target since it was written, and its tracks are still settled. */
+  private unchanged(runtime: TransformTarget, beat: number) {
+    if (!(beat >= runtime.settledFrom && beat < runtime.settledUntil)) return false;
+    const target = runtime.target;
+    if (
+      !target.position.equals(runtime.writtenPosition) ||
+      !target.quaternion.equals(runtime.writtenRotation) ||
+      !target.scale.equals(runtime.writtenScale)
+    )
+      return false;
+    if (runtime.parentWorld === null) return true;
+    // A world-space track keeps the target still in the world, so it follows its parent
+    if (target.parent === null) return false;
+    this.parentSpace(target.parent);
+    return target.parent.matrixWorld.equals(runtime.parentWorld);
+  }
+
   private updateTransforms(beat: number, noodle?: NoodleBeatmapData, context?: PointSampleContext) {
+    this.frame++;
+    // Noodle parents move targets without their own events, so those maps sample every frame
+    const skipSettled = noodle === undefined || noodle.parentEvents.length === 0;
     for (const runtime of this.transformTargets) {
+      if (skipSettled && this.unchanged(runtime, beat)) continue;
       let position: Vector3Tuple | undefined;
       let localPosition: Vector3Tuple | undefined;
       let rotation: QuaternionTuple | undefined;
       let localRotation: QuaternionTuple | undefined;
       let scale: Vector3Tuple | undefined;
+      let until = Number.POSITIVE_INFINITY;
       for (const name of runtime.tracks) {
         const track = this.track(name);
         if (track === undefined) continue;
@@ -433,9 +535,15 @@ export class ChromaTrackRuntime {
         rotation = multiplyQuaternions(rotation, this.sampleRotation(track.rotation, beat, context));
         localRotation = multiplyQuaternions(localRotation, this.sampleRotation(track.localRotation, beat, context));
         scale = multiplyVector(scale, this.sampleVector(track.scale, beat, context));
+        until = settledUntil(track.position, beat, until);
+        until = settledUntil(track.localPosition, beat, until);
+        until = settledUntil(track.rotation, beat, until);
+        until = settledUntil(track.localRotation, beat, until);
+        until = settledUntil(track.scale, beat, until);
       }
 
       const target = runtime.target;
+      let parentSpace: ParentSpace | null = null;
       if (scale === undefined) target.scale.copy(runtime.scale);
       else target.scale.fromArray(scale);
 
@@ -443,19 +551,18 @@ export class ChromaTrackRuntime {
       else if (rotation !== undefined) {
         this.targetRotation.fromArray(rotation);
         if (target.parent !== null) {
-          target.parent.updateWorldMatrix(true, false);
-          target.parent.matrixWorld.decompose(this.parentPosition, this.parentRotation, this.parentScale);
-          this.targetRotation.premultiply(this.parentRotation.invert());
+          parentSpace = this.parentSpace(target.parent);
+          this.targetRotation.premultiply(parentSpace.inverseRotation);
         }
         target.quaternion.copy(this.targetRotation);
       } else target.quaternion.copy(runtime.rotation);
 
-      if (localPosition !== undefined) target.position.fromArray(mapPosition(localPosition, this.v2));
+      if (localPosition !== undefined) setMappedPosition(target.position, localPosition, this.v2);
       else if (position !== undefined) {
-        this.worldPosition.fromArray(mapPosition(position, this.v2));
+        setMappedPosition(this.worldPosition, position, this.v2);
         if (target.parent !== null) {
-          target.parent.updateWorldMatrix(true, false);
-          target.parent.worldToLocal(this.worldPosition);
+          parentSpace = this.parentSpace(target.parent);
+          this.worldPosition.applyMatrix4(parentSpace.inverseMatrix);
         }
         // worldToLocal through a scale-0 ancestor divides by zero; keep base so the subtree stays collapsed
         if (Number.isFinite(this.worldPosition.x + this.worldPosition.y + this.worldPosition.z)) {
@@ -466,6 +573,14 @@ export class ChromaTrackRuntime {
       target.updateMatrix();
       target.updateWorldMatrix(false, true);
       if (noodle !== undefined) this.applyNoodleParent(runtime, noodle, beat, context);
+
+      runtime.settledFrom = Number.isNaN(until) ? Number.NaN : beat;
+      runtime.settledUntil = until;
+      runtime.writtenPosition.copy(target.position);
+      runtime.writtenRotation.copy(target.quaternion);
+      runtime.writtenScale.copy(target.scale);
+      if (parentSpace === null || target.parent === null) runtime.parentWorld = null;
+      else (runtime.parentWorld ??= new Matrix4()).copy(target.parent.matrixWorld);
     }
   }
 
