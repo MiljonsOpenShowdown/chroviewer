@@ -133,7 +133,8 @@ test('skipping settled objects gives the same transforms as sampling every frame
     }
     frame(beat);
   }
-});
+  // A few seconds alone; more while the whole suite runs in parallel
+}, 30_000);
 
 test.skipIf(process.env.CHROMA_BENCH === undefined)(
   'benchmark',

@@ -60,6 +60,13 @@ interface MaterialLightUniforms {
   multiplier?: IUniform<number>;
 }
 
+/** A material light's materials with their uniforms, so each frame skips the per-material lookups. */
+interface LightMaterialUniforms {
+  colorProperty: string;
+  materials: ShaderMaterial[];
+  uniforms: MaterialLightUniforms[];
+}
+
 const alphaUniformNames = new Map<string, string>();
 
 function alphaUniformName(colorProperty: string) {
@@ -133,6 +140,10 @@ export class EnvironmentLightRuntime {
   private readonly chromaTracks = new ChromaTrackRuntime();
   private readonly glsSegments = new Map<EnvironmentLightSegment, ControlledLight>();
   private readonly materialUniforms = new WeakMap<ShaderMaterial, Map<string, MaterialLightUniforms>>();
+  private readonly lightMaterialUniforms = new WeakMap<
+    LoadedEnvironment['materialLights'][number],
+    LightMaterialUniforms
+  >();
   private readonly glsMaterialLights = new Map<LoadedEnvironment['materialLights'][number], ControlledLight>();
   private readonly glsColorSamples = new Map<GlsColorSource, ReturnType<typeof sampleGlsColorTween>>();
   private readonly glsDirectMaterials = new Map<
@@ -469,11 +480,21 @@ export class EnvironmentLightRuntime {
         light.node.visible = light.initialVisible !== false && visible;
       }
       light.applyAlpha?.(sampled.rawAlpha ?? sampled.alpha);
-      const colorProperty = light.colorProperty ?? '_Color';
       const setColor = light.combined?.setAlphaOnly !== true;
       const setAlpha = light.combined?.setColorOnly !== true;
-      for (const material of light.materials) {
-        const uniforms = this.materialLightUniforms(material, colorProperty);
+      const cached = this.uniformsForLight(light);
+      for (let index = 0; index < light.materials.length; index++) {
+        const material = light.materials[index];
+        if (material === undefined) continue;
+        let uniforms = cached.uniforms[index];
+        if (cached.materials[index] !== material || uniforms === undefined) {
+          uniforms = this.materialLightUniforms(material, cached.colorProperty);
+          cached.materials[index] = material;
+          cached.uniforms[index] = uniforms;
+        } else if (uniforms.color === undefined || uniforms.alpha === undefined || uniforms.multiplier === undefined) {
+          // Looked up again while one is missing, as materialLightUniforms does
+          uniforms = this.materialLightUniforms(material, cached.colorProperty);
+        }
         if (setColor) writeColorUniform(uniforms.color, color);
         if (setAlpha) {
           writeNumberUniform(uniforms.alpha, alpha);
@@ -487,6 +508,24 @@ export class EnvironmentLightRuntime {
       writeNumberUniform(uniforms.alpha, controlled.alpha);
       writeNumberUniform(uniforms.multiplier, controlled.alpha);
     }
+  }
+
+  /**
+   * The light's per-material uniforms, the same objects materialLightUniforms
+   * keeps. Starts over when the light's color property or material count changes.
+   */
+  private uniformsForLight(light: LoadedEnvironment['materialLights'][number]) {
+    const colorProperty = light.colorProperty ?? '_Color';
+    let cached = this.lightMaterialUniforms.get(light);
+    if (
+      cached === undefined ||
+      cached.colorProperty !== colorProperty ||
+      cached.materials.length !== light.materials.length
+    ) {
+      cached = { colorProperty, materials: [], uniforms: [] };
+      this.lightMaterialUniforms.set(light, cached);
+    }
+    return cached;
   }
 
   private materialLightUniforms(material: ShaderMaterial, colorProperty: string) {
@@ -574,6 +613,11 @@ export class EnvironmentLightRuntime {
   }
 
   private sampleEnvironmentLight(bindings: EnvironmentLightBinding[], beat: number, boosted: boolean, songBpm: number) {
+    // Most lights have one binding: nothing to pick between, so no latest-event lookups
+    if (bindings.length === 1) {
+      const only = bindings[0];
+      return only === undefined ? null : this.sampleEnvironmentBinding(only, beat, boosted, songBpm);
+    }
     this.prepareBasicLightSamples(beat, boosted, songBpm);
     let binding: EnvironmentLightBinding | undefined;
     let latest = Number.NEGATIVE_INFINITY;
