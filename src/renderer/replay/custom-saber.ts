@@ -5,6 +5,7 @@ import {
   SRGBColorSpace,
   TextureLoader,
   type BufferGeometry,
+  type IUniform,
   type Material,
   type ShaderMaterial,
   type Texture,
@@ -15,6 +16,7 @@ import type { Rgb } from '../../core/colors';
 import type { ReplaySaberModelId } from '../../core/viewer-settings';
 import type { FogUniforms } from '../bloomfog/pipeline';
 import { createSaberGlowMaterial } from '../materials/map-object-materials';
+import { createMosLogoMaterial } from './mos-saber-materials';
 import { createReplaySurfaceMaterial, type ReplayDirectionalLights, type ReplaySurface } from './replay-headset';
 
 type CustomSaberModelId = Exclude<ReplaySaberModelId, 'default'>;
@@ -27,6 +29,7 @@ interface CustomSaberPart {
   color: Rgb;
   colorIndex: CustomSaberColorIndex;
   role: CustomSaberMaterialRole;
+  mosLogo: boolean;
 }
 
 interface CustomSaberTemplate {
@@ -38,10 +41,18 @@ export interface CustomSaberColorBinding {
   colorIndex: 0 | 1;
 }
 
+/** A glow uniform the MOS brightness setting scales from its loaded value. */
+export interface CustomSaberBrightnessBinding {
+  uniform: IUniform<number>;
+  base: number;
+  maximum: number;
+}
+
 export interface CustomSaberInstance {
   root: Group;
   materials: ShaderMaterial[];
   colorBindings: CustomSaberColorBinding[];
+  brightnessBindings: CustomSaberBrightnessBinding[];
 }
 
 interface CustomSaberTrailDefinition {
@@ -94,9 +105,20 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
   },
 };
 
+// The MOS ThinSabers' white "Metallic" handle reads as flat gray under the
+// replay lights, and their big "M" plate (Cube.001) washes out to white under
+// the default saber glow.
+const MOS_HANDLE_COLOR: Rgb = [0.07, 0.07, 0.08];
+const MOS_LOGO_BRIGHTNESS = 0.8;
+const MOS_LOGO_GLOW = 0.5;
+
 const templateCache = new Map<CustomSaberModelId, Promise<CustomSaberTemplate>>();
 const textureCache = new Map<string, Promise<Texture>>();
 const textureLoader = new TextureLoader();
+
+function isMosModel(model: CustomSaberModelId) {
+  return model.startsWith('mos-');
+}
 
 function materialRole(name: string): CustomSaberMaterialRole {
   const role = name.split('::').at(-1);
@@ -152,12 +174,15 @@ async function loadTemplate(model: CustomSaberModelId): Promise<CustomSaberTempl
         if (source === undefined) return;
         sourceMaterials.add(source);
         const role = materialRole(source.name);
+        const mosHandle = isMosModel(model) && source.name === 'Metallic::surface';
         sides[side]?.push({
           geometry: object.geometry,
           name: source.name,
-          color: materialColor(source),
+          color: mosHandle ? MOS_HANDLE_COLOR : materialColor(source),
           colorIndex: colorIndex(role, side),
           role,
+          // GLTFLoader strips the "." from Cube.001
+          mosLogo: isMosModel(model) && object.name.includes('__Cube001__'),
         });
       });
       for (const material of sourceMaterials) material.dispose();
@@ -199,10 +224,12 @@ export async function createCustomSaberInstance(
   root.rotation.y = Math.PI;
   const materials: ShaderMaterial[] = [];
   const colorBindings: CustomSaberColorBinding[] = [];
+  const brightnessBindings: CustomSaberBrightnessBinding[] = [];
   const materialCache = new Map<string, ShaderMaterial>();
 
   function createMaterial(part: CustomSaberPart) {
     const materialColor = part.colorIndex === null ? part.color : colors[part.colorIndex];
+    if (part.mosLogo) return createMosLogoMaterial(fog, materialColor, MOS_LOGO_BRIGHTNESS, MOS_LOGO_GLOW);
     if (part.role === 'custom-glow' || part.role === 'static-glow') {
       return createSaberGlowMaterial(fog, materialColor, saberCoreColor(materialColor));
     }
@@ -218,12 +245,37 @@ export async function createCustomSaberInstance(
       materialCache.set(key, material);
       materials.push(material);
       if (part.colorIndex !== null) colorBindings.push({ material, colorIndex: part.colorIndex });
+      if (isMosModel(model)) brightnessBindings.push(...glowBrightnessBindings(material));
     }
     const mesh = new Mesh(part.geometry, material);
     mesh.name = part.name;
     root.add(mesh);
   }
-  return { root, materials, colorBindings };
+  return { root, materials, colorBindings, brightnessBindings };
+}
+
+// Color strength scales freely; bloom is stored in scene alpha, so it stops at 1
+const GLOW_BRIGHTNESS_UNIFORMS: Record<string, number> = {
+  _ColorMultiplier: Number.POSITIVE_INFINITY,
+  _CoreMultiplier: Number.POSITIVE_INFINITY,
+  _Brightness: Number.POSITIVE_INFINITY,
+  _BloomAlpha: 1,
+  _CoreBloomAlpha: 1,
+  _Glow: 1,
+};
+
+function glowBrightnessBindings(material: ShaderMaterial): CustomSaberBrightnessBinding[] {
+  const bindings: CustomSaberBrightnessBinding[] = [];
+  for (const [name, maximum] of Object.entries(GLOW_BRIGHTNESS_UNIFORMS)) {
+    const uniform: IUniform<unknown> | undefined = material.uniforms[name];
+    if (typeof uniform?.value !== 'number') continue;
+    bindings.push({ uniform: uniform as IUniform<number>, base: uniform.value, maximum });
+  }
+  return bindings;
+}
+
+export function applyCustomSaberBrightness(bindings: readonly CustomSaberBrightnessBinding[], brightness: number) {
+  for (const { uniform, base, maximum } of bindings) uniform.value = Math.min(base * brightness, maximum);
 }
 
 export function customSaberTrailPoints(model: CustomSaberModelId) {

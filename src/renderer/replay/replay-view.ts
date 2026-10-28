@@ -32,10 +32,12 @@ import {
 } from '../materials/map-object-materials';
 import { shaderUniformValue } from '../materials/shared';
 import {
+  applyCustomSaberBrightness,
   createCustomSaberInstance,
   customSaberTrailPoints,
   isCustomSaberModel,
   loadCustomSaberTrailTexture,
+  type CustomSaberBrightnessBinding,
   type CustomSaberColorBinding,
   type CustomSaberInstance,
 } from './custom-saber';
@@ -106,6 +108,7 @@ export class ReplayView {
   private readonly customSaberRoots = [new Group(), new Group()];
   private readonly customSaberMaterials: ShaderMaterial[] = [];
   private readonly customSaberColorBindings: CustomSaberColorBinding[][] = [[], []];
+  private readonly customSaberBrightnessBindings: CustomSaberBrightnessBinding[] = [];
   private readonly replayTrails: ReplaySaberTrail[] = [];
   private readonly defaultReplayTrailMaterials: ShaderMaterial[] = [];
   private readonly replaySaberColorMaterials: { blade: ShaderMaterial; core: ShaderMaterial }[] = [];
@@ -533,6 +536,7 @@ export class ReplayView {
       root.visible = settings.showSabers && custom && this.loadedCustomSaberModel === settings.saberModel;
       root.scale.set(settings.saberWidth, settings.saberWidth, 1);
     }
+    applyCustomSaberBrightness(this.customSaberBrightnessBindings, settings.mosSaberBrightness);
 
     const customTrail = isCustomSaberModel(settings.saberModel) ? customSaberTrailPoints(settings.saberModel) : null;
     const tipDistance = customTrail?.tip ?? settings.saberBladeLength;
@@ -558,6 +562,7 @@ export class ReplayView {
     this.customSaberMaterials.length = 0;
     this.customSaberColorBindings[0] = [];
     this.customSaberColorBindings[1] = [];
+    this.customSaberBrightnessBindings.length = 0;
     for (const [index, trail] of this.replayTrails.entries()) {
       const material = this.defaultReplayTrailMaterials[index];
       if (material !== undefined) setReplaySaberTrailMaterial(trail, material);
@@ -584,6 +589,7 @@ export class ReplayView {
         this.customSaberRoots[index]?.add(instance.root);
         this.customSaberMaterials.push(...instance.materials);
         this.customSaberColorBindings[index] = instance.colorBindings;
+        this.customSaberBrightnessBindings.push(...instance.brightnessBindings);
         for (const binding of instance.colorBindings) {
           setCustomSaberMaterialColor(binding.material, this.saberColors[binding.colorIndex]);
         }

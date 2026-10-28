@@ -98,6 +98,7 @@ showSabers=true|false
 saber=ko-circles              Select Ko-Circles (alias for saberModel=ko-circles).
 saberModel=default|ko-circles|ko-monkey-3|mos-cc|mos-proficient|mos-tourney|mos-winner
 saberWidth=0.25..3            Scale the saber's width without changing its length.
+mosSaberBrightness=0..2       Glow brightness of the MOS sabers (blade, accents and "M" plate).
 saberScale=0.25..3
 saberBladeLength=0.1..2
 saberBladeThickness=0.001..0.03

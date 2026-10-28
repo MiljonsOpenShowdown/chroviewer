@@ -360,9 +360,12 @@ export function CosmeticsSettings({ settings, environments, onChange }: Cosmetic
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {/* A hidden saber still shows while selected, so the trigger has a label */}
+                      {/* A hidden saber still shows while selected, so the trigger has a label; dev builds list them all for testing */}
                       {replaySaberModelIds
-                        .filter((model) => !menuHiddenSaberModelIds.has(model) || model === settings.saberModel)
+                        .filter(
+                          (model) =>
+                            import.meta.env.DEV || !menuHiddenSaberModelIds.has(model) || model === settings.saberModel,
+                        )
                         .map((model) => (
                           <SelectItem key={model} value={model}>
                             {t(`saberModels.${model}`)}
@@ -386,6 +389,13 @@ export function CosmeticsSettings({ settings, environments, onChange }: Cosmetic
                 step: 0.01,
                 display: percent,
               })}
+              {settings.saberModel.startsWith('mos-') &&
+                slider('mosSaberBrightness', {
+                  minimum: 0,
+                  maximum: 2,
+                  step: 0.01,
+                  display: percent,
+                })}
               {settings.saberModel === 'default' && (
                 <>
                   {slider('saberScale', {

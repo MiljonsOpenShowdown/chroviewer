@@ -41,6 +41,7 @@ export interface ViewerSettings {
   saberModel: ReplaySaberModelId;
   saberScale: number;
   saberWidth: number;
+  mosSaberBrightness: number;
   saberBladeLength: number;
   saberBladeThickness: number;
   saberCoreThickness: number;
@@ -170,6 +171,7 @@ export type ReplaySaberSettings = Pick<
   | 'saberModel'
   | 'saberScale'
   | 'saberWidth'
+  | 'mosSaberBrightness'
   | 'saberBladeLength'
   | 'saberBladeThickness'
   | 'saberCoreThickness'
@@ -240,6 +242,7 @@ export const DEFAULT_REPLAY_SABER_SETTINGS: ReplaySaberSettings = {
   saberModel: 'default',
   saberScale: 1,
   saberWidth: 1,
+  mosSaberBrightness: 1,
   saberBladeLength: 1,
   saberBladeThickness: 0.0075,
   saberCoreThickness: 0.003,
@@ -401,6 +404,7 @@ const viewerSettingsObjectSchema = z.object({
   saberModel: z.catch(z.enum(replaySaberModelIds), DEFAULT_VIEWER_SETTINGS.saberModel),
   saberScale: numberSetting(DEFAULT_VIEWER_SETTINGS.saberScale, 0.25, 3),
   saberWidth: numberSetting(DEFAULT_VIEWER_SETTINGS.saberWidth, 0.25, 3),
+  mosSaberBrightness: numberSetting(DEFAULT_VIEWER_SETTINGS.mosSaberBrightness, 0, 2),
   saberBladeLength: numberSetting(DEFAULT_VIEWER_SETTINGS.saberBladeLength, 0.1, 2),
   saberBladeThickness: numberSetting(DEFAULT_VIEWER_SETTINGS.saberBladeThickness, 0.001, 0.03),
   saberCoreThickness: numberSetting(DEFAULT_VIEWER_SETTINGS.saberCoreThickness, 0.0005, 0.02),

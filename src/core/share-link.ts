@@ -49,6 +49,7 @@ export function settingsForShareCategories(
       saberModel: settings.saberModel,
       saberScale: settings.saberScale,
       saberWidth: settings.saberWidth,
+      mosSaberBrightness: settings.mosSaberBrightness,
       saberBladeLength: settings.saberBladeLength,
       saberBladeThickness: settings.saberBladeThickness,
       saberCoreThickness: settings.saberCoreThickness,

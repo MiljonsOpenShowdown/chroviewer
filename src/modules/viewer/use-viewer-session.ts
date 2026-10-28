@@ -190,6 +190,7 @@ export function useViewerSession({
     settings.saberModel,
     settings.saberScale,
     settings.saberWidth,
+    settings.mosSaberBrightness,
     settings.saberBladeLength,
     settings.saberBladeThickness,
     settings.saberCoreThickness,

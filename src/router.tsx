@@ -42,6 +42,7 @@ const replaySaberSearchKeys = [
   'saberModel',
   'saberScale',
   'saberWidth',
+  'mosSaberBrightness',
   'saberBladeLength',
   'saberBladeThickness',
   'saberCoreThickness',

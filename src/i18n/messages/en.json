@@ -216,6 +216,7 @@
       "saberRingThickness": "Decorative ring thickness",
       "saberScale": "Overall scale",
       "saberWidth": "Saber width",
+      "mosSaberBrightness": "MOS saber brightness",
       "saberXOffset": "Left / right offset",
       "saberXRotation": "Pitch",
       "saberYOffset": "Up / down offset",
