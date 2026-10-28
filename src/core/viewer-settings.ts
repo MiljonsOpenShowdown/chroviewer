@@ -116,6 +116,10 @@ export const replaySaberModelIds = [
   'ko-circles',
   'ko-monkey-3',
   'acc-saber',
+  'mos-cc',
+  'mos-proficient',
+  'mos-tourney',
+  'mos-winner',
 ] as const;
 
 export type ReplaySaberModelId = (typeof replaySaberModelIds)[number];

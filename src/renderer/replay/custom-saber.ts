@@ -64,6 +64,10 @@ const MODEL_PATHS: Record<CustomSaberModelId, string> = {
   'ko-circles': 'ko-circles.glb',
   'ko-monkey-3': 'ko-monkey-3.glb',
   'acc-saber': 'acc-saber.glb',
+  'mos-cc': 'mos-cc.glb',
+  'mos-proficient': 'mos-proficient.glb',
+  'mos-tourney': 'mos-tourney.glb',
+  'mos-winner': 'mos-winner.glb',
 };
 
 const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
@@ -107,6 +111,27 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
     base: 0.867999971,
     tip: 1.02100003,
     texture: 'acc-saber-trail.png',
+  },
+  // The MOS ThinSabers share one trail
+  'mos-cc': {
+    base: 0.826900005,
+    tip: 1.01100004,
+    texture: 'mos-trail.png',
+  },
+  'mos-proficient': {
+    base: 0.826900005,
+    tip: 1.01100004,
+    texture: 'mos-trail.png',
+  },
+  'mos-tourney': {
+    base: 0.826900005,
+    tip: 1.01100004,
+    texture: 'mos-trail.png',
+  },
+  'mos-winner': {
+    base: 0.826900005,
+    tip: 1.01100004,
+    texture: 'mos-trail.png',
   },
 };
 

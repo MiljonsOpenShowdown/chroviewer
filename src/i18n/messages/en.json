@@ -197,7 +197,11 @@
         "euc": "European Championship",
         "ko-circles": "Ko-Circles",
         "ko-monkey-3": "Ko - Monkey 3",
-        "acc-saber": "Acc Saber"
+        "acc-saber": "Acc Saber",
+        "mos-cc": "MOS - CC",
+        "mos-proficient": "MOS - Proficient",
+        "mos-tourney": "MOS - Tourney",
+        "mos-winner": "MOS - Winner"
       },
       "saberBladeLength": "Blade length",
       "saberBladeThickness": "Blade thickness",
