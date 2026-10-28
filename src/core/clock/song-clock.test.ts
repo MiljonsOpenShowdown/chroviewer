@@ -1,6 +1,41 @@
 import { describe, expect, test, vi } from 'vite-plus/test';
 
-import { createClock } from './song-clock';
+import { createClock, oggVorbisDuration } from './song-clock';
+
+/** An Ogg page with one segment of `body`, at `granule`. */
+function oggPage(granule: bigint, body: number[]) {
+  const page = new Uint8Array(28 + body.length);
+  page.set([0x4f, 0x67, 0x67, 0x53, 0]);
+  new DataView(page.buffer).setBigInt64(6, granule, true);
+  page[26] = 1;
+  page[27] = body.length;
+  page.set(body, 28);
+  return page;
+}
+
+function oggFile(sampleRate: number, granules: bigint[]) {
+  const header = Array.from({ length: 30 }, () => 0);
+  header.splice(0, 7, 0x01, ...new TextEncoder().encode('vorbis'));
+  header.splice(12, 4, ...new Uint8Array(new Uint32Array([sampleRate]).buffer));
+  const pages = [oggPage(0n, header), ...granules.map((granule) => oggPage(granule, [1, 2, 3]))];
+  const bytes = new Uint8Array(pages.reduce((length, page) => length + page.length, 0));
+  pages.reduce((offset, page) => (bytes.set(page, offset), offset + page.length), 0);
+  return bytes.buffer;
+}
+
+describe('Ogg Vorbis length', () => {
+  test('is the last granule position over the sample rate', () => {
+    expect(oggVorbisDuration(oggFile(44_100, [44_100n, 44_100n * 90n]))).toBe(90);
+  });
+
+  test('skips a last page without a granule position', () => {
+    expect(oggVorbisDuration(oggFile(48_000, [48_000n * 30n, -1n]))).toBe(30);
+  });
+
+  test('is null for other audio', () => {
+    expect(oggVorbisDuration(new Uint8Array([0x49, 0x44, 0x33, 4, 0, 0, 0, 0]).buffer)).toBeNull();
+  });
+});
 
 function fixture(rate = 1, offset = 0) {
   let now = 0;

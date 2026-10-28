@@ -161,6 +161,32 @@ function isOggAudio(audioData: ArrayBuffer) {
   return signature[0] === 0x4f && signature[1] === 0x67 && signature[2] === 0x67 && signature[3] === 0x53;
 }
 
+/**
+ * An Ogg Vorbis file's length in seconds without decoding it: the last page's
+ * granule position (samples) over the identification header's sample rate.
+ * Null for anything else, so silent clocks can match the audio clock's length.
+ */
+export function oggVorbisDuration(audioData: ArrayBuffer): number | null {
+  if (!isOggAudio(audioData) || audioData.byteLength < 27) return null;
+  const bytes = new Uint8Array(audioData);
+  const view = new DataView(audioData);
+  // The first page holds only the identification header: 0x01 "vorbis"
+  const packet = 27 + (bytes[26] ?? 0);
+  if (packet + 16 > bytes.length || bytes[packet] !== 0x01) return null;
+  if (String.fromCharCode(...bytes.subarray(packet + 1, packet + 7)) !== 'vorbis') return null;
+  const sampleRate = view.getUint32(packet + 12, true);
+  if (sampleRate === 0) return null;
+  // The last page with a granule position (-1 means no packet ends on it)
+  for (let page = bytes.length - 27; page > 0; page--) {
+    if (bytes[page] !== 0x4f || bytes[page + 1] !== 0x67 || bytes[page + 2] !== 0x67 || bytes[page + 3] !== 0x53)
+      continue;
+    if (bytes[page + 4] !== 0) continue;
+    const granule = view.getBigInt64(page + 6, true);
+    if (granule > 0n) return Number(granule) / sampleRate;
+  }
+  return null;
+}
+
 async function decodeOggVorbis(ctx: AudioContext, audioData: ArrayBuffer) {
   return Result.tryPromise(async () => {
     const { OggVorbisDecoderWebWorker } = await import('@wasm-audio-decoders/ogg-vorbis');

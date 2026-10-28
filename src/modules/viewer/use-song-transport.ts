@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { songBpmTimeToSeconds } from '../../core/beatmap/bpm';
 import type { HitsoundEvent } from '../../core/clock/hitsounds';
-import { createAudioClock, createSilentClock, type SongClock } from '../../core/clock/song-clock';
+import { createAudioClock, createSilentClock, oggVorbisDuration, type SongClock } from '../../core/clock/song-clock';
 import type { LightshowMode } from '../../core/lighting/basic-light';
 import type { ViewerSettings } from '../../core/viewer-settings';
 import { useHitsoundPlayback } from './use-hitsound-playback';
@@ -209,7 +209,10 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
     let audioDecodeFailed = false;
     const audioData = options.audioEnabled ? options.audioData : null;
     if (audioData === null) {
-      clock = createSilentClock(options.fallbackDuration, options.songBpm);
+      // Muted (e.g. a multiview tile without the audio): the song's own length,
+      // so it plays out to the end like the tile with the audio
+      const songLength = options.audioData === null ? null : oggVorbisDuration(options.audioData);
+      clock = createSilentClock(songLength ?? options.fallbackDuration, options.songBpm);
     } else {
       const result = await createAudioClock({
         audioData,
@@ -230,7 +233,7 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
     const audioStillEnabled = settingsRef.current.masterVolume > 0;
     if (!audioStillEnabled && audioData !== null && !audioDecodeFailed) {
       clock.dispose();
-      clock = createSilentClock(options.fallbackDuration, options.songBpm);
+      clock = createSilentClock(clock.duration, options.songBpm);
     }
     audioActiveRef.current = audioStillEnabled && audioData !== null && !audioDecodeFailed;
     disposeClock();
