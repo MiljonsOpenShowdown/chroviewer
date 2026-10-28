@@ -151,7 +151,7 @@ describe('independent player cosmetics', () => {
       compositorSyncType: 'wait-for-all',
       compositorWaitSeconds: 60,
       replayTrailSmoothing: false,
-      saberModel: 'euc',
+      saberModel: 'ko-circles',
       saberWidth: 0.72,
     });
     const saved = { ...DEFAULT_VIEWER_SETTINGS, ...patch };

@@ -95,8 +95,8 @@ customColors=true|false
 leftColor=%23rrggbb            URL-encoded #rrggbb left saber color.
 rightColor=%23rrggbb           URL-encoded #rrggbb right saber color.
 showSabers=true|false
-saber=cg5                     Select CG5 (alias for saberModel=cg5).
-saberModel=default|beatkhana|cg5|cube-community-new|cube-community-v1|euc
+saber=ko-circles              Select Ko-Circles (alias for saberModel=ko-circles).
+saberModel=default|ko-circles|ko-monkey-3|mos-cc|mos-proficient|mos-tourney|mos-winner
 saberWidth=0.25..3            Scale the saber's width without changing its length.
 saberScale=0.25..3
 saberBladeLength=0.1..2
@@ -136,11 +136,10 @@ Every saber parameter is validated with the same limits as the settings panel. F
 parameters override saved settings and may also be supplied inside the existing
 settings JSON query object.
 
-Custom sabers retain their native mesh and trail endpoints. CG5 includes its
-animated fire trail and glow. In the compositor, set saberModel=cg5 in the selected
-player's settings object, just like euc or beatkhana; other players keep their own
-models and colors. If the compositor builds a viewer URL per player, append
-&saber=cg5 (or &saberModel=cg5) to that player's URL.
+Custom sabers retain their native mesh and trail endpoints. In the compositor, set
+saberModel=ko-circles in the selected player's settings object; other players keep
+their own models and colors. If the compositor builds a viewer URL per player, append
+&saber=ko-circles (or &saberModel=ko-circles) to that player's URL.
 
 CAMERA
 camera=static|follow|first-person

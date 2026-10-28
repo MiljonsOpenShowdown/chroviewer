@@ -33,26 +33,26 @@ test('parses trail smoothing as a direct viewer setting', () => {
 });
 
 test('parses custom saber model aliases and canonical keys', () => {
-  const alias = parseUrlSearch('?saber=euc');
-  const canonical = parseUrlSearch('?saberModel=beatkhana');
+  const alias = parseUrlSearch('?saber=ko-circles');
+  const canonical = parseUrlSearch('?saberModel=ko-monkey-3');
 
-  expect(alias.settings).toEqual({ saberModel: 'euc' });
-  expect(canonical.settings).toEqual({ saberModel: 'beatkhana' });
+  expect(alias.settings).toEqual({ saberModel: 'ko-circles' });
+  expect(canonical.settings).toEqual({ saberModel: 'ko-monkey-3' });
   expect(z.parse(viewerSearchSchema, alias).settings).toEqual(alias.settings);
   expect(z.parse(viewerSearchSchema, canonical).settings).toEqual(canonical.settings);
 });
 
-test('selects CG5 through either per-player URL key and keeps other players independent', () => {
-  const cg5 = z.parse(viewerSearchSchema, parseUrlSearch('?saber=cg5&leftColor=%2300ff00'));
-  const canonical = z.parse(viewerSearchSchema, parseUrlSearch('?saberModel=cg5'));
-  const euc = z.parse(viewerSearchSchema, parseUrlSearch('?saber=euc'));
-  const compositorSettings = encodeURIComponent(JSON.stringify({ saberModel: 'cg5', rightColor: '#ffaa00' }));
+test('selects a custom saber through either per-player URL key and keeps other players independent', () => {
+  const circles = z.parse(viewerSearchSchema, parseUrlSearch('?saber=ko-circles&leftColor=%2300ff00'));
+  const canonical = z.parse(viewerSearchSchema, parseUrlSearch('?saberModel=ko-circles'));
+  const monkey = z.parse(viewerSearchSchema, parseUrlSearch('?saber=ko-monkey-3'));
+  const compositorSettings = encodeURIComponent(JSON.stringify({ saberModel: 'ko-circles', rightColor: '#ffaa00' }));
   const nested = z.parse(viewerSearchSchema, parseUrlSearch(`?settings=${compositorSettings}`));
 
-  expect(cg5.settings).toMatchObject({ saberModel: 'cg5', leftColor: '#00ff00' });
-  expect(canonical.settings?.saberModel).toBe('cg5');
-  expect(euc.settings?.saberModel).toBe('euc');
-  expect(nested.settings).toMatchObject({ saberModel: 'cg5', rightColor: '#ffaa00' });
+  expect(circles.settings).toMatchObject({ saberModel: 'ko-circles', leftColor: '#00ff00' });
+  expect(canonical.settings?.saberModel).toBe('ko-circles');
+  expect(monkey.settings?.saberModel).toBe('ko-monkey-3');
+  expect(nested.settings).toMatchObject({ saberModel: 'ko-circles', rightColor: '#ffaa00' });
 });
 
 test('parses saber width as a per-viewer setting', () => {

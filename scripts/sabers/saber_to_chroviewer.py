@@ -24,10 +24,6 @@ built-in materials become plain white. The trail texture is the trail material's
 _AlphaTex (else its first texture), saved unchanged. Saber animations and
 special shaders (e.g. fire trail displacement) are not converted.
 
-Checked against euc, cg5, beatkhana and cube-community-new: identical parts,
-roles, triangles and winding (cube-community-v1.glb additionally contains its
-disabled LeftSaberMesh/RightSaberMesh).
-
 Build the exe (any venv):
     pip install UnityPy trimesh numpy pyinstaller
     pyinstaller --onefile --name SaberToChroViewer --collect-all UnityPy
@@ -90,9 +86,9 @@ def role(material):
         custom = floats['_CustomColors'] >= 0.5
     else:
         # Without the property, the Beat Saber glow shaders use the player's
-        # colors unless they are the "(No CC)" variants (checked on CG5)
+        # colors unless they are the "(No CC)" variants
         custom = 'No CC' not in shader_name(material)
-    # Bloom alone also makes a part glow (BeatKhana's Unlit Wave medallion)
+    # Bloom alone also makes a part glow (e.g. an Unlit Wave medallion)
     glow = floats.get('_Glow', 0) > 0 or floats.get('_Bloom', 0) > 0
     if custom and glow:
         return 'custom-glow'

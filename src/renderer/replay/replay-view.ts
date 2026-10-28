@@ -31,12 +31,10 @@ import {
   createSaberTrailMaterial,
 } from '../materials/map-object-materials';
 import { shaderUniformValue } from '../materials/shared';
-import { createCg5SaberTrailMaterial } from './cg5-saber-materials';
 import {
   createCustomSaberInstance,
   customSaberTrailPoints,
   isCustomSaberModel,
-  loadCustomSaberTrailDisplacementTexture,
   loadCustomSaberTrailTexture,
   type CustomSaberColorBinding,
   type CustomSaberInstance,
@@ -570,13 +568,12 @@ export class ReplayView {
   private async loadCustomSaberModel(model: Exclude<ReplaySaberModelId, 'default'>) {
     const generation = ++this.customSaberLoadGeneration;
     try {
-      const [instances, trailTexture, displacementTexture] = await Promise.all([
+      const [instances, trailTexture] = await Promise.all([
         Promise.all([
           createCustomSaberInstance(model, 0, this.saberColors, this.fog, this.directionalLights),
           createCustomSaberInstance(model, 1, this.saberColors, this.fog, this.directionalLights),
         ] satisfies Promise<CustomSaberInstance>[]),
         loadCustomSaberTrailTexture(model),
-        loadCustomSaberTrailDisplacementTexture(model),
       ]);
       if (this.disposed || generation !== this.customSaberLoadGeneration || this.saberSettings.saberModel !== model) {
         for (const instance of instances) for (const material of instance.materials) material.dispose();
@@ -593,10 +590,7 @@ export class ReplayView {
         const trail = this.replayTrails[index];
         const color = this.saberColors[index] ?? DEFAULT_COLORS.leftNote;
         if (trail === undefined) continue;
-        const trailMaterial =
-          displacementTexture === undefined
-            ? createSaberTrailMaterial(color, trailTexture)
-            : createCg5SaberTrailMaterial(color, trailTexture, displacementTexture);
+        const trailMaterial = createSaberTrailMaterial(color, trailTexture);
         setReplaySaberTrailMaterial(trail, trailMaterial);
         this.customSaberMaterials.push(trailMaterial);
       }
