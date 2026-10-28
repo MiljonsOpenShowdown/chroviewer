@@ -61,11 +61,30 @@ export interface MultiviewStateMessage {
     playerId: string;
     platformIds: string[];
     score: unknown;
+    /**
+     * The tile's score from its own replay at `time`, in the realtime score's
+     * field names: exact to the frame shown, where `score` (the parent's
+     * realtime score cached by song time) can trail it. Null without a replay
+     * or before its first score.
+     */
+    replayScore: MultiviewReplayScore | null;
     status: string;
     /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
     streamId: string | null;
     time: number;
   }>;
+}
+
+export interface MultiviewReplayScore {
+  score: number;
+  accuracy: number;
+  combo: number;
+  maxCombo: number;
+  notesMissed: number;
+  badCuts: number;
+  bombHits: number;
+  /** The song time it is the score at. */
+  songPosition: number;
 }
 
 export interface MultiviewReadyMessage {

@@ -244,6 +244,11 @@ export function replayScoreAt(timeline: ReplayScoreTimeline, time: number) {
   return replayStateAt(timeline.replay, timeline.stateIndex, time);
 }
 
+/** A replay's score state at a time, without building its full timeline. */
+export function replayScoreStateAt(replay: Replay, time: number) {
+  return replayStateAt(replay, buildReplayStateIndex(replay), time);
+}
+
 export function replayEventIndexAfter(timeline: ReplayScoreTimeline, time: number) {
   return upperBound(timeline.events, time, (event) => event.time);
 }

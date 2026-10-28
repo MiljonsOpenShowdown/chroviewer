@@ -2,6 +2,7 @@ import type { BeatmapParser } from '../../core/beatmap/worker/client';
 import type { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
 import type { LiveMapCache } from '../live/live-map-cache';
 import type { LiveStatus } from '../live/live-types';
+import type { MultiviewReplayScore } from '../multiview/multiview-protocol';
 import type { MultiviewStartBarrier } from '../multiview/multiview-start-barrier';
 import type { MultiviewTimeline } from '../multiview/multiview-timeline';
 import type { MapMeta } from './viewer-types';
@@ -23,6 +24,8 @@ export interface MultiviewPlaybackSnapshot {
   /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
   streamId: string | null;
   playbackRate: number;
+  /** The score in the tile's replay at a song time (see MultiviewStateMessage's replayScore). */
+  scoreAt(time: number): MultiviewReplayScore | null;
   seek(time: number): void;
   play(): void;
   pause(): void;

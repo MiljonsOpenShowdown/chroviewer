@@ -8,6 +8,7 @@ import { EmbeddedRealtimeScoreTimeline, isEmbeddedRealtimeScoreMessage } from '.
 import { replayLightshowMode } from '../live/live-replay';
 import type { LiveStatus, LiveTarget } from '../live/live-types';
 import { useLiveExperience } from '../live/use-live-experience';
+import { multiviewReplayScore } from '../multiview/multiview-replay-score';
 import { useAiPreview } from '../viewer/use-ai-play';
 import { useSongTransport } from '../viewer/use-song-transport';
 import { useViewerSession } from '../viewer/use-viewer-session';
@@ -343,6 +344,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
       mapHash: sources.mapIdentity?.hash ?? null,
       streamId: multiview.replayUrl === undefined && live.streamId !== '' ? live.streamId : null,
       playbackRate: transport.clockRef.current?.getRate() ?? 1,
+      scoreAt: (time) => multiviewReplayScore(sources.replayRef.current, time),
       seek: transport.seek,
       play: () => transportRef.current.play(),
       pause: () => transportRef.current.pause(),

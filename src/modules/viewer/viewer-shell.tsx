@@ -27,6 +27,7 @@ import type { LiveStatus, LiveTarget } from '../live/live-types';
 import { LiveViewerPanel } from '../live/live-viewer-panel';
 import { useLiveExperience } from '../live/use-live-experience';
 import { useMapPoolShowcase } from '../map-pool-showcase/use-map-pool-showcase';
+import { multiviewReplayScore } from '../multiview/multiview-replay-score';
 import { ReplayPlayerCard } from '../replay/replay-player-card';
 import { SettingsDrawer } from '../settings/settings-drawer';
 import { useWatchPartyExperience } from '../watch-party/use-watch-party-experience';
@@ -735,6 +736,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
       mapHash: sources.mapIdentity?.hash ?? null,
       streamId: multiview.replayUrl === undefined && live.streamId !== '' ? live.streamId : null,
       playbackRate: transport.clockRef.current?.getRate() ?? 1,
+      scoreAt: (time) => multiviewReplayScore(sources.replayRef.current, time),
       seek: transport.seek,
       play: () => transportRef.current.play(),
       pause: () => transportRef.current.pause(),

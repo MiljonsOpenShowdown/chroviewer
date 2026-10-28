@@ -12,6 +12,7 @@ import type {
   MultiviewControlMessage,
   MultiviewPerfMessage,
   MultiviewPlayerConfig,
+  MultiviewReplayScore,
   MultiviewStateMessage,
 } from './multiview-protocol';
 import { MultiviewStartBarrier } from './multiview-start-barrier';
@@ -31,6 +32,14 @@ declare global {
   interface Window {
     beatKhanaNativeCompositor?: NativeCompositorBridge;
   }
+}
+
+/** Soonest a changed replay score is sent after the last state message. */
+const SCORE_PUBLISH_MIN_MS = 50;
+
+/** The tiles' replay scores without their song time, which moves on every tick. */
+function scoresSignature(scores: (MultiviewReplayScore | null)[]) {
+  return JSON.stringify(scores.map((score) => (score === null ? null : { ...score, songPosition: 0 })));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -303,6 +312,56 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
   }, [host, players, timeline]);
 
   useEffect(() => {
+    // Each tile's score from its own replay at the time it shows, as last sent
+    let publishedScores = '';
+    const replayScores = (now: number) =>
+      players.map(
+        (player) => playbackRef.current.get(player.id)?.scoreAt(timeline.sampleFor(player.id, now)?.time ?? 0) ?? null,
+      );
+    const publishState = (now: number, scores: (MultiviewReplayScore | null)[]) => {
+      const primarySample = timeline.primary(now);
+      if (primarySample === null) return;
+      const primary = playbackRef.current.get(primarySample.id);
+      if (primary === undefined || primary.duration <= 0) return;
+      lastStatePublishRef.current = now;
+      publishedScores = scoresSignature(scores);
+      const message: MultiviewStateMessage = {
+        type: 'beatkhana:multiview-state',
+        version: 1,
+        time: primarySample.time,
+        beat: primarySample.beat,
+        duration: primarySample.duration,
+        playing: primarySample.playing,
+        mapHash: primarySample.mapHash,
+        map: primary.map,
+        players: players.map((player, index) => ({
+          id: player.id,
+          playerId: player.playerId,
+          platformIds: player.platformIds,
+          score:
+            scoreTimelinesRef.current.get(player.id)?.at(timeline.sampleFor(player.id, now)?.time ?? 0)?.score ??
+            player.score,
+          replayScore: scores[index] ?? null,
+          status: playbackRef.current.get(player.id)?.status ?? 'waiting',
+          streamId: playbackRef.current.get(player.id)?.streamId ?? null,
+          time: timeline.sampleFor(player.id, now)?.time ?? 0,
+        })),
+      };
+      if (nativeBridge !== undefined) nativeBridge.send(message);
+      else {
+        const origin = parentOriginRef.current;
+        // Sandboxed parents report an opaque "null" origin, which postMessage cannot target.
+        if (origin !== null) window.parent.postMessage(message, origin === 'null' ? '*' : origin);
+      }
+    };
+    // A note cut changes a tile's replay score: sent at once, not on the next
+    // 5 Hz publish, so the parent's HUD changes with the cut on screen
+    const scoreTimer = window.setInterval(() => {
+      const now = performance.now();
+      if (now - lastStatePublishRef.current < SCORE_PUBLISH_MIN_MS) return;
+      const scores = replayScores(now);
+      if (scoresSignature(scores) !== publishedScores) publishState(now, scores);
+    }, SCORE_PUBLISH_MIN_MS);
     const timer = window.setInterval(() => {
       const snapshots = players
         .map((player) => ({ player, playback: playbackRef.current.get(player.id) }))
@@ -366,36 +425,12 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
       // away from the WebGL frame loop. Active corrections advance at 10 Hz;
       // drift detection uses each player's configured observation interval.
       if (now - lastStatePublishRef.current < 200) return;
-      lastStatePublishRef.current = now;
-      const message: MultiviewStateMessage = {
-        type: 'beatkhana:multiview-state',
-        version: 1,
-        time: primarySample.time,
-        beat: primarySample.beat,
-        duration: primarySample.duration,
-        playing: primarySample.playing,
-        mapHash: primarySample.mapHash,
-        map: primary.playback.map,
-        players: players.map((player) => ({
-          id: player.id,
-          playerId: player.playerId,
-          platformIds: player.platformIds,
-          score:
-            scoreTimelinesRef.current.get(player.id)?.at(timeline.sampleFor(player.id, now)?.time ?? 0)?.score ??
-            player.score,
-          status: playbackRef.current.get(player.id)?.status ?? 'waiting',
-          streamId: playbackRef.current.get(player.id)?.streamId ?? null,
-          time: timeline.sampleFor(player.id, now)?.time ?? 0,
-        })),
-      };
-      if (nativeBridge !== undefined) nativeBridge.send(message);
-      else {
-        const origin = parentOriginRef.current;
-        // Sandboxed parents report an opaque "null" origin, which postMessage cannot target.
-        if (origin !== null) window.parent.postMessage(message, origin === 'null' ? '*' : origin);
-      }
+      publishState(now, replayScores(now));
     }, 100);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(scoreTimer);
+    };
   }, [nativeBridge, players, timeline]);
 
   // Once a second, how the shared renderer keeps up, for the parent's profiling.
