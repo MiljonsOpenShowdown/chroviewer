@@ -124,6 +124,14 @@ export const replaySaberModelIds = [
 
 export type ReplaySaberModelId = (typeof replaySaberModelIds)[number];
 
+// Left out of the settings menu; MOS selects them through its overlay settings
+export const menuHiddenSaberModelIds: ReadonlySet<ReplaySaberModelId> = new Set([
+  'mos-cc',
+  'mos-proficient',
+  'mos-tourney',
+  'mos-winner',
+]);
+
 export type HitsoundPreset = z.infer<typeof hitsoundPresetSchema>;
 
 export const MIN_AUDIO_OFFSET_MS = -1000;

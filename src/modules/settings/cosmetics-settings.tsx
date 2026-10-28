@@ -7,6 +7,7 @@ import { MAX_HSV_PROFILE_BYTES, parseHitScoreVisualizerProfile } from '../../cor
 import {
   DEFAULT_REPLAY_SABER_SETTINGS,
   DEFAULT_VIEWER_SETTINGS,
+  menuHiddenSaberModelIds,
   replaySaberModelIds,
   type ReplaySaberSettings,
   type ViewerSettings,
@@ -359,11 +360,14 @@ export function CosmeticsSettings({ settings, environments, onChange }: Cosmetic
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {replaySaberModelIds.map((model) => (
-                        <SelectItem key={model} value={model}>
-                          {t(`saberModels.${model}`)}
-                        </SelectItem>
-                      ))}
+                      {/* A hidden saber still shows while selected, so the trigger has a label */}
+                      {replaySaberModelIds
+                        .filter((model) => !menuHiddenSaberModelIds.has(model) || model === settings.saberModel)
+                        .map((model) => (
+                          <SelectItem key={model} value={model}>
+                            {t(`saberModels.${model}`)}
+                          </SelectItem>
+                        ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
