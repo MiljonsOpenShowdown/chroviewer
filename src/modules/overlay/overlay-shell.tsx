@@ -29,6 +29,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** The search without its unset keys, so it doesn't clear the overlay defaults. */
+/** A tile's `liveBufferSeconds` setting, 0 to 6 seconds; unset or invalid is none. */
+function liveBufferSetting(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(6, Math.max(0, value)) : undefined;
+}
+
 function definedSearch(search: ViewerSearch) {
   return Object.fromEntries(Object.entries(search).filter(([, value]) => value !== undefined));
 }
@@ -311,6 +316,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
     externalTimeline: multiview !== undefined,
     taSyncGroup: search.syncGroup,
     taCatchupUrl: search.catchupUrl,
+    liveBufferSeconds: liveBufferSetting(multiview?.settings?.liveBufferSeconds),
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
     hasLiveMap: (hash) => sources.hasLiveMap(hash),
     loadLiveReplay: (hash, replay) => {
@@ -346,6 +352,8 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
       playbackRate: transport.clockRef.current?.getRate() ?? 1,
       scoreAt: (time) => multiviewReplayScore(sources.replayRef.current, time),
       seek: transport.seek,
+      seekableRange: () =>
+        multiview.replayUrl === undefined ? live.seekableRange() : { start: 0, end: transport.duration },
       play: () => transportRef.current.play(),
       pause: () => transportRef.current.pause(),
       correctDrift: (time) => transport.clockRef.current?.correctDrift(time),

@@ -54,6 +54,14 @@ export function advanceMultiviewCorrection(
   return { correct: true, state };
 }
 
+/**
+ * The song time a `sync` moves a live tile to: the anchor's time, or the
+ * nearest one the tile can seek to. The anchor itself never moves.
+ */
+export function multiviewSyncTime(anchorTime: number, range: { start: number; end: number }) {
+  return Math.min(range.end, Math.max(range.start, anchorTime));
+}
+
 export interface MultiviewTimelineSample extends MultiviewTimelineSnapshot {
   id: string;
 }

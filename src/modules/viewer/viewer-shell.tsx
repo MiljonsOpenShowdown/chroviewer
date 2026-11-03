@@ -738,6 +738,8 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
       playbackRate: transport.clockRef.current?.getRate() ?? 1,
       scoreAt: (time) => multiviewReplayScore(sources.replayRef.current, time),
       seek: transport.seek,
+      seekableRange: () =>
+        multiview.replayUrl === undefined ? live.seekableRange() : { start: 0, end: transport.duration },
       play: () => transportRef.current.play(),
       pause: () => transportRef.current.pause(),
       correctDrift: (time) => transport.clockRef.current?.correctDrift(time),

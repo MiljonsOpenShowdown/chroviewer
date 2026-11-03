@@ -27,6 +27,11 @@ export interface MultiviewPlaybackSnapshot {
   /** The score in the tile's replay at a song time (see MultiviewStateMessage's replayScore). */
   scoreAt(time: number): MultiviewReplayScore | null;
   seek(time: number): void;
+  /**
+   * The song times the tile can seek to without stalling: from its oldest
+   * retained frame to just behind its newest. Null before it has any.
+   */
+  seekableRange(): { start: number; end: number } | null;
   play(): void;
   pause(): void;
   correctDrift(time: number): void;

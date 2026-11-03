@@ -37,8 +37,12 @@ import {
 import { createTaLiveSync } from './ta-live-sync';
 import { readTaReplayFilePackets } from './ta-replay-file';
 
-// A catch-up file that takes longer than this is skipped for the live stream alone
-const catchupTimeoutMs = 8000;
+// A catch-up file that takes longer than this is skipped for the live stream alone.
+// Live packets are held while it loads, so this is also how long a viewer opened
+// midway can sit idle on a slow or hanging catch-up.
+const catchupTimeoutMs = 5000;
+// A play that started this long ago (by the server's clock) is joined midway
+const midPlayJoinMs = 20_000;
 
 function packetSequence(packet: ReplayStreamPacket) {
   return packet.body.case === 'chunk' || packet.body.case === 'end' ? (packet.body.value.cursor?.sequence ?? 0n) : 0n;
@@ -182,13 +186,24 @@ export function useLiveConnection(
       const replay = createLiveReplay(start, activeTarget.source === 'ta' || activeTarget.source === 'cocu');
       runtime.replay = replay;
       const startBarrier = optionsRef.current.startBarrier;
-      if (startBarrier?.barrier.enabled) {
+      // The start barrier lines up two fresh starts. A viewer joining midway seeks
+      // just behind the live edge on its own, so it must not wait for the other tile
+      // (a dead or slow one would hold it for the whole wait).
+      const serverStart = Number(start.serverStartTimeUnixMs);
+      const joiningMidPlay = applyingCatchup || (serverStart > 0 && Date.now() - serverStart > midPlayJoinMs);
+      if (startBarrier?.barrier.enabled && !joiningMidPlay) {
         runtime.compositorBufferSeconds = startBarrier.barrier.waitSeconds;
         startBarrier.barrier.begin(
           startBarrier.id,
           packet.streamId,
           `${liveMapHash(start)}:${replay.metadata.difficulty}:${replay.metadata.characteristic}:${replay.metadata.songSpeed ?? 1}`,
         );
+      }
+      // A page asking for a play buffer plays at least that far behind live
+      const buffer = optionsRef.current.liveBufferSeconds ?? 0;
+      if (buffer > 0) {
+        runtime.playbackMaxDelay = Math.max(runtime.playbackMaxDelay, buffer);
+        runtime.playbackDelay = Math.max(runtime.playbackDelay, buffer);
       }
       runtime.playbackRate = replay.metadata.songSpeed && replay.metadata.songSpeed > 0 ? replay.metadata.songSpeed : 1;
       const hash = liveMapHash(start);
@@ -364,6 +379,8 @@ export function useLiveConnection(
     // Live packets wait here while caught-up history is fetched, so the history
     // (older sequence numbers) is applied first and the live packets after it
     let heldPackets: ArrayBuffer[] | null = null;
+    // True while the caught-up history is applied: the stream is joined midway
+    let applyingCatchup = false;
     const catchupUrl =
       activeTarget.source === 'ta' || activeTarget.source === 'cocu' ? optionsRef.current.taCatchupUrl : undefined;
     if (catchupUrl !== undefined) {
@@ -388,8 +405,13 @@ export function useLiveConnection(
           if (right.body.case === 'start') return 1;
           return Number(packetSequence(left) - packetSequence(right));
         });
+        applyingCatchup = true;
         for (const packet of packets) applyReplayPacket(packet, true);
+        applyingCatchup = false;
         if (runtime.replay !== null) runtime.taCatchupStart = true;
+      } else {
+        // Seen in the browser console; the viewer carries on with the live stream alone
+        console.warn(`[live] catch-up skipped: ${fetched.error.message}`);
       }
       const held = heldPackets ?? [];
       heldPackets = null;

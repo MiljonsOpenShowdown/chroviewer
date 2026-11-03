@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vite-plus/test';
 
-import { advanceMultiviewCorrection, MultiviewTimeline, multiviewAudioOwner } from './multiview-timeline';
+import {
+  advanceMultiviewCorrection,
+  MultiviewTimeline,
+  multiviewAudioOwner,
+  multiviewSyncTime,
+} from './multiview-timeline';
 
 const base = {
   beat: 20,
@@ -15,6 +20,18 @@ const base = {
 };
 
 describe('multiview timeline', () => {
+  test('moves a tile to the anchor time when it has the data', () => {
+    // P1 (anchor) at 70 s, P2 behind with data to 72 s: P2 skips forward
+    expect(multiviewSyncTime(70, { start: 50, end: 72 })).toBe(70);
+    // P1 at 64 s, P2 ahead with history back to 55 s: P2 goes back
+    expect(multiviewSyncTime(64, { start: 55, end: 71 })).toBe(64);
+  });
+  test('moves a tile as close to the anchor as its data allows', () => {
+    // P2 has data only to 67 s: it goes there, P1 stays at 70 s
+    expect(multiviewSyncTime(70, { start: 50, end: 67 })).toBe(67);
+    // P2's history starts after P1's time: it goes to its oldest frame
+    expect(multiviewSyncTime(40, { start: 45, end: 70 })).toBe(45);
+  });
   test('supports a 200 ms drift trigger observed every two seconds', () => {
     const first = advanceMultiviewCorrection(undefined, 0.21, 0, 0.2);
     expect(first.correct).toBe(false);

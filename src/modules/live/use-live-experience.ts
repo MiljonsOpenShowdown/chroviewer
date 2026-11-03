@@ -13,6 +13,9 @@ import type { LiveExperienceOptions, LiveExperienceState } from './live-types';
 import { encodeChatEnvelope } from './ludus-protocol';
 import { useLiveConnection } from './use-live-connection';
 
+/** A seek stays this far behind the newest frame, so it does not stall at once. */
+const seekMarginSeconds = 0.75;
+
 export function useLiveExperience(options: LiveExperienceOptions) {
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -102,6 +105,19 @@ export function useLiveExperience(options: LiveExperienceOptions) {
     };
   }, [state.audioBlocked, unlockAudio]);
 
+  // From the oldest retained frame to just behind the newest (or the newest
+  // once the play ended). The playback delay beyond that margin is the room a
+  // seek forward can use without stalling.
+  const seekableRange = useCallback(() => {
+    const runtime = runtimeRef.current;
+    const start = runtime?.replay?.poses[0]?.time;
+    if (runtime === null || start === undefined) return null;
+    const end = runtime.streamEnding
+      ? runtime.latestFrameTime
+      : runtime.latestFrameTime - Math.min(runtime.playbackDelay, seekMarginSeconds);
+    return { start, end: Math.max(start, end) };
+  }, []);
+
   useLiveConnection(options.target, optionsRef, runtimeRef, setState);
 
   let player = playerQuery.data ?? null;
@@ -109,5 +125,5 @@ export function useLiveExperience(options: LiveExperienceOptions) {
     player = { id: playerId, name: playerId, avatar: '', country: '' };
   }
   const playerProfilePending = !profileOptional && playerId !== undefined && playerQuery.isPending;
-  return { ...state, player, playerProfilePending, sendChatMessage, unlockAudio };
+  return { ...state, player, playerProfilePending, seekableRange, sendChatMessage, unlockAudio };
 }

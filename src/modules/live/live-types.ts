@@ -76,6 +76,12 @@ export interface LiveExperienceOptions {
    * live socket's packets, so a viewer opened midway starts at the live edge.
    */
   taCatchupUrl?: string;
+  /**
+   * Plays at least this many seconds behind the newest received frame, so the
+   * player can seek forward within it (e.g. a multiview sync). Unset keeps the
+   * usual startup delay.
+   */
+  liveBufferSeconds?: number;
   startBarrier?: { id: string; barrier: MultiviewStartBarrier };
   hasLiveMap: (hash: string) => boolean;
   loadLiveReplay: (hash: string, replay: Replay) => Promise<SourceResult<void>>;

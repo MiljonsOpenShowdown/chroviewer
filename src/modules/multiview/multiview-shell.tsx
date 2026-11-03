@@ -20,6 +20,7 @@ import {
   advanceMultiviewCorrection,
   MultiviewTimeline,
   multiviewAudioOwner,
+  multiviewSyncTime,
   type MultiviewCorrectionState,
 } from './multiview-timeline';
 
@@ -55,6 +56,7 @@ function validReplayUrl(value: unknown) {
 function validControl(value: Record<string, unknown>): value is Record<string, unknown> & MultiviewControlMessage {
   if (value.version !== 1) return false;
   if (value.action === 'play' || value.action === 'pause') return true;
+  if (value.action === 'sync') return typeof value.anchorId === 'string';
   return value.action === 'seek' && typeof value.time === 'number' && Number.isFinite(value.time) && value.time >= 0;
 }
 
@@ -227,7 +229,39 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         setPlayers(next);
       }
     }
+    // Every other live tile on the anchor's map that shows gameplay goes to the
+    // anchor's time, or the nearest one it has data for. The anchor (the tile
+    // the audio follows) never moves.
+    function syncLiveTiles(anchorId: string) {
+      const now = performance.now();
+      const anchorPlayback = playbackRef.current.get(anchorId);
+      const anchor = timeline.ownSample(anchorId, now);
+      if (anchor === null || anchorPlayback?.status !== 'watching') return;
+      for (const player of playersRef.current) {
+        const playback = playbackRef.current.get(player.id);
+        if (
+          player.id === anchorId ||
+          player.replayUrl !== undefined ||
+          !player.visible ||
+          playback?.status !== 'watching' ||
+          playback.mapHash !== anchorPlayback.mapHash
+        )
+          continue;
+        const range = playback.seekableRange();
+        const own = timeline.ownSample(player.id, now);
+        if (range === null || own === null) continue;
+        correctionStateRef.current.delete(player.id);
+        correctingRef.current.delete(player.id);
+        nextSyncCheckRef.current.delete(player.id);
+        const time = multiviewSyncTime(anchor.time, range);
+        if (Math.abs(own.time - time) > 0.02) playback.seek(time);
+      }
+    }
     function applyControl(data: MultiviewControlMessage) {
+      if (data.action === 'sync') {
+        syncLiveTiles(data.anchorId ?? '');
+        return;
+      }
       const now = performance.now();
       const replayIds = playersRef.current
         .filter((player) => player.replayUrl !== undefined)
