@@ -44,6 +44,8 @@ export interface MultiviewTileOptions {
   playerId: string;
   /** Recorded replay to play instead of the player's live TA stream. */
   replayUrl?: string;
+  /** A live tile the parent seeks, plays and pauses (MultiviewPlayerConfig.controlled). */
+  controlled: boolean;
   host: MultiviewRendererHost;
   masterVolume: number;
   hitsoundVolume: number;

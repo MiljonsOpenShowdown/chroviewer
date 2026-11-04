@@ -97,6 +97,14 @@ export interface LiveExperienceOptions {
    */
   taCatchupUrl?: string;
   /**
+   * The embedding page drives this tile like a recorded replay (seek, play,
+   * pause, rate) over its live stream: the whole play is kept to seek in, it
+   * never starts or resumes on its own, and the player's in-game pauses are
+   * not applied. Used with taCatchupUrl to watch a play still in progress from
+   * any point.
+   */
+  controlled?: boolean;
+  /**
    * Plays at least this many seconds behind the newest received frame, so the
    * player can seek forward within it (e.g. a multiview sync). Unset keeps the
    * usual startup delay.

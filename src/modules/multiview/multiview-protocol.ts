@@ -11,6 +11,14 @@ export interface MultiviewPlayerConfig {
    * with `beatkhana:multiview-control`.
    */
   replayUrl?: string;
+  /**
+   * A live tile the parent drives like a replay tile (`play`, `pause`, `seek`,
+   * `rate` act on it, `sync` leaves it alone): the whole play is kept to seek
+   * in and it never plays on its own. Pair it with a `catchupUrl` setting to
+   * watch a play still in progress from its start. A new `catchupUrl` remounts
+   * the tile, so it loads that play's history.
+   */
+  controlled?: boolean;
   x: number;
   y: number;
   width: number;
@@ -40,10 +48,10 @@ export interface MultiviewConfigMessage {
 }
 
 /**
- * Playback control. `play`, `pause` and `seek` drive recorded replays (every
- * replay tile at once). `sync` moves the other live tiles to the anchor tile's
+ * Playback control. `play`, `pause` and `seek` drive recorded replays and
+ * controlled live tiles (every one at once). `sync` moves the other live tiles to the anchor tile's
  * song time, or the nearest one each has data for. The anchor never moves.
- * `rate` sets the playback speed of every replay tile.
+ * `rate` sets the playback speed of every replay and controlled tile.
  */
 export interface MultiviewControlMessage {
   type: 'beatkhana:multiview-control';

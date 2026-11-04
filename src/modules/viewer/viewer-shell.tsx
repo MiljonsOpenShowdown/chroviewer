@@ -419,6 +419,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     externalTimeline: multiview !== undefined,
     taSyncGroup: search.syncGroup,
     taCatchupUrl: search.catchupUrl,
+    controlled: multiview?.controlled === true && multiview.replayUrl === undefined,
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
     onLiveEvent: multiview?.onLiveEvent,
     hasLiveMap: (hash) => sources.hasLiveMap(hash),

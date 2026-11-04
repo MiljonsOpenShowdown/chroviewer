@@ -79,6 +79,7 @@ function validPlayer(value: unknown): value is MultiviewPlayerConfig {
     /^\d+$/.test(value.playerId) &&
     Array.isArray(value.platformIds) &&
     validReplayUrl(value.replayUrl) &&
+    (value.controlled === undefined || typeof value.controlled === 'boolean') &&
     ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(value[key])) &&
     typeof value.visible === 'boolean' &&
     typeof value.masterVolume === 'number' &&
@@ -111,12 +112,25 @@ interface TilePlaybackState {
   status: MultiviewPlaybackSnapshot['status'];
 }
 
+/** Driven by the parent's play, pause, seek and rate: a recorded replay or a controlled live tile. */
+function parentDriven(player: MultiviewPlayerConfig) {
+  return player.replayUrl !== undefined || player.controlled === true;
+}
+
+/** What remounts a tile: a new recording, or a controlled tile's new catch-up (another play). */
+function tileSource(player: MultiviewPlayerConfig) {
+  if (player.replayUrl !== undefined) return player.replayUrl;
+  return player.controlled === true ? `controlled:${String(player.settings.catchupUrl ?? '')}` : '';
+}
+
 function waitingLabel(player: MultiviewPlayerConfig, playback: TilePlaybackState | undefined) {
   // A recorded replay is shown as soon as it is loaded, including while paused.
   if (player.replayUrl !== undefined) {
     if (playback?.status === 'error') return playback.error || 'Replay unavailable';
     return playback?.status === 'watching' ? null : 'Loading replay';
   }
+  // A controlled tile is shown once started, paused or not, like a replay
+  if (player.controlled === true && playback?.status === 'watching' && playback.hasMap) return null;
   if (
     playback !== undefined &&
     playback.status === 'watching' &&
@@ -219,7 +233,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
       for (const player of next) {
         let scoreTimeline = scoreTimelinesRef.current.get(player.id);
         // A tile switching player or recording starts from a clean sync state.
-        const identity = `${player.playerId}|${player.replayUrl ?? ''}`;
+        const identity = `${player.playerId}|${tileSource(player)}`;
         if (playerIdentitiesRef.current.get(player.id) !== identity) {
           scoreTimeline?.clear();
           playerIdentitiesRef.current.set(player.id, identity);
@@ -264,7 +278,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         const playback = playbackRef.current.get(player.id);
         if (
           player.id === anchorId ||
-          player.replayUrl !== undefined ||
+          parentDriven(player) ||
           !player.visible ||
           playback?.status !== 'watching' ||
           playback.mapHash !== anchorPlayback.mapHash
@@ -289,9 +303,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         return;
       }
       const now = performance.now();
-      const replayIds = playersRef.current
-        .filter((player) => player.replayUrl !== undefined)
-        .map((player) => player.id);
+      const replayIds = playersRef.current.filter(parentDriven).map((player) => player.id);
       const tiles = replayIds.flatMap((id) => {
         const playback = playbackRef.current.get(id);
         return playback === undefined ? [] : [{ id, playback }];
@@ -660,12 +672,13 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         parser !== null &&
         runtimePlayers.map((player) => (
           <Tile
-            // A new recording remounts the tile so its sources load from scratch.
-            key={`${player.id}:${player.replayUrl ?? ''}`}
+            // A new recording or catch-up remounts the tile so its sources load from scratch.
+            key={`${player.id}:${tileSource(player)}`}
             multiview={{
               id: player.id,
               playerId: player.playerId,
               replayUrl: player.replayUrl,
+              controlled: player.controlled === true,
               host,
               mapCache,
               masterVolume: player.masterVolume,

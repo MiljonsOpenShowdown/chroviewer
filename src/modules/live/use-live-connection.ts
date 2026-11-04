@@ -48,6 +48,8 @@ import { readTaReplayFilePackets } from './ta-replay-file';
 // Live packets are held while it loads, so this is also how long a viewer opened
 // midway can sit idle on a slow or hanging catch-up.
 const catchupTimeoutMs = 5000;
+// A controlled tile's catch-up can be a whole play so far: it gets longer
+const controlledCatchupTimeoutMs = 30_000;
 // A play that started this long ago (by the server's clock) is joined midway
 const midPlayJoinMs = 20_000;
 
@@ -71,6 +73,7 @@ export function useLiveConnection(
 
     let disposed = false;
     const runtime = createLiveRuntime(activeTarget);
+    runtime.controlled = optionsRef.current.controlled === true;
     const taSync =
       optionsRef.current.externalTimeline !== true && (activeTarget.source === 'ta' || activeTarget.source === 'cocu')
         ? createTaLiveSync(activeTarget.playerId, optionsRef.current.taSyncGroup)
@@ -215,7 +218,8 @@ export function useLiveConnection(
       const serverStart = Number(start.serverStartTimeUnixMs);
       const joiningMidPlay = applyingCatchup || (serverStart > 0 && Date.now() - serverStart > midPlayJoinMs);
       emit({ type: 'stream-start', streamId: packet.streamId, mapHash: liveMapHash(start), midway: joiningMidPlay });
-      if (startBarrier?.barrier.enabled && !joiningMidPlay) {
+      // A controlled tile starts when its parent plays it
+      if (startBarrier?.barrier.enabled && !joiningMidPlay && !runtime.controlled) {
         runtime.compositorBufferSeconds = startBarrier.barrier.waitSeconds;
         startBarrier.barrier.begin(
           startBarrier.id,
@@ -435,7 +439,9 @@ export function useLiveConnection(
       const startedAt = performance.now();
       const fetched = await Result.tryPromise({
         try: async () => {
-          const response = await fetch(url, { signal: AbortSignal.timeout(catchupTimeoutMs) });
+          const response = await fetch(url, {
+            signal: AbortSignal.timeout(runtime.controlled ? controlledCatchupTimeoutMs : catchupTimeoutMs),
+          });
           if (!response.ok) throw new Error(`catch-up returned ${String(response.status)}`);
           return readTaReplayFilePackets(new Uint8Array(await response.arrayBuffer()));
         },

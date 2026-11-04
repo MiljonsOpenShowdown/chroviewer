@@ -26,6 +26,11 @@ export interface LiveRuntime {
   bufferedPackets: ReplayStreamPacket[];
   compositorBufferSeconds: number;
   compositorStartAligned: boolean;
+  /**
+   * The parent drives the clock (LiveExperienceOptions.controlled): the whole
+   * play stays in memory to seek in, and playback never resumes on its own.
+   */
+  controlled: boolean;
   connectionId: string;
   currentStreamId: string;
   followRequested: boolean;
@@ -79,6 +84,7 @@ export function createLiveRuntime(target: LiveTarget): LiveRuntime {
     bufferedPackets: [],
     compositorBufferSeconds: 0,
     compositorStartAligned: false,
+    controlled: false,
     connectionId: '',
     currentStreamId: '',
     followRequested: false,
@@ -193,7 +199,8 @@ export function increasePlaybackDelay(runtime: LiveRuntime) {
 
 export function pruneLiveReplay(runtime: LiveRuntime, time: number) {
   const replay = runtime.replay;
-  if (replay === null) return;
+  // A controlled tile may be sought anywhere in the play
+  if (replay === null || runtime.controlled) return;
   const retainedSeconds = runtime.taLive ? taRetainedHistorySeconds : retainedHistorySeconds;
   // TA can play far behind incoming data, including after a compositor timeout.
   // Keep every unread pose; only the consumer's clock can retire its history.

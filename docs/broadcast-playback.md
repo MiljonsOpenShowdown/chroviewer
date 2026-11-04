@@ -130,3 +130,24 @@ To play the recorded tiles faster or slower (e.g. following a debug playback at
 ```ts
 iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'rate', rate: 4 }, '*');
 ```
+
+## Controlled live tiles
+
+A play still in progress has no recording yet. To watch it from any point, set
+`controlled: true` on a live player (no `replayUrl`) and give it a `catchupUrl`
+setting: a TournamentAssistant replay file of the play so far.
+
+```ts
+{ id: 'p1', playerId: '76561198000000000', controlled: true, settings: { catchupUrl: 'https://...' }, ... }
+```
+
+The tile loads the catch-up, then keeps adding the live stream's packets to it.
+It keeps the whole play in memory (no history is pruned behind the playhead),
+so it can be sought anywhere from the play's start to the newest frame
+(`seekableRange` in the tile's playback). It is shown, paused at the first
+frame, once its map and first frames are in, and from then on it behaves like
+a recorded tile: `play`, `pause`, `seek` and `rate` act on it, it never starts
+or resumes on its own, `sync` leaves it alone, and the player's in-game pauses
+are not applied (the parent pauses it). A new `catchupUrl` remounts the tile,
+so it loads that play's history; a new play on the same live stream replaces
+the old one in place.

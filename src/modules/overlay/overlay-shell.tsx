@@ -316,6 +316,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
     externalTimeline: multiview !== undefined,
     taSyncGroup: search.syncGroup,
     taCatchupUrl: search.catchupUrl,
+    controlled: multiview?.controlled === true && multiview.replayUrl === undefined,
     liveBufferSeconds: liveBufferSetting(multiview?.settings?.liveBufferSeconds),
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
     onLiveEvent: multiview?.onLiveEvent,

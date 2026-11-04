@@ -55,7 +55,8 @@ export function tickLivePlayback(
   const firstFrameTime = replay.poses[0]?.time;
   if (firstFrameTime === undefined || runtime.latestFrameTime <= 0) return;
   const currentTime = clock.currentTime();
-  processPauseEvents(runtime, currentTime, actions);
+  // A controlled tile's pauses come from its parent, not from the player's
+  if (!runtime.controlled) processPauseEvents(runtime, currentTime, actions);
   if (runtime.streamPaused) return;
   if (runtime.taLive) {
     tickTournamentAssistantPlayback(runtime, clock, firstFrameTime, currentTime, actions);
@@ -85,6 +86,17 @@ function tickTournamentAssistantPlayback(
   currentTime: number,
   actions: LivePlaybackActions,
 ) {
+  // The parent seeks, plays and pauses a controlled tile. It is shown, paused
+  // at the first frame, as soon as its map and first frames are in.
+  if (runtime.controlled) {
+    if (!runtime.playbackStarted) {
+      runtime.playbackStarted = true;
+      actions.seek(firstFrameTime);
+    }
+    runtime.playbackAttemptPending = false;
+    actions.updateStatus('watching');
+    return;
+  }
   if (currentTime >= clock.duration - 0.02) {
     runtime.taSyncHolding = false;
     actions.updateStatus('waiting');

@@ -4,8 +4,12 @@ import { describe, expect, test, vi } from 'vite-plus/test';
 import { createClock } from '../../core/clock/song-clock';
 import { sampleReplayFrames } from '../../core/replay/sampling';
 import type { Replay, ReplayPose } from '../../core/replay/types';
-import { ReplayChunkSchema, ReplayStreamStartSchema } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
-import { tickLivePlayback } from './live-playback';
+import {
+  ReplayChunkSchema,
+  ReplayPauseEventSchema,
+  ReplayStreamStartSchema,
+} from './generated/proto/scoresaber/live/v1/replay_stream_pb';
+import { scheduleReplayPause, tickLivePlayback } from './live-playback';
 import { createLiveReplay } from './live-replay';
 import { applyLiveReplayChunk } from './live-replay-stream';
 import { createLiveRuntime, pruneLiveReplay, resetLiveStream } from './live-runtime';
@@ -278,5 +282,65 @@ describe('buffered group playback', () => {
     const actions = { pause: vi.fn(), resume: vi.fn(() => true), seek: vi.fn(), updateStatus: vi.fn() };
     tickLivePlayback(runtime, clock, 'Standard:9', actions);
     expect(actions.seek).toHaveBeenCalledWith(29);
+  });
+});
+
+describe('controlled TA tile', () => {
+  test('starts paused at the first frame and never resumes on its own', () => {
+    const { runtime, clock, actions, advance, appendChunk } = fixture();
+    runtime.controlled = true;
+    runtime.mapLoaded = true;
+    runtime.playbackAttemptPending = true;
+    appendChunk(2, 0.2);
+    for (let tick = 0; tick < 50; tick++) {
+      advance(0.1);
+      tickLivePlayback(runtime, clock, 'Standard:9', actions);
+    }
+    expect(actions.seek).toHaveBeenCalledTimes(1);
+    expect(actions.seek).toHaveBeenCalledWith(2);
+    expect(actions.resume).not.toHaveBeenCalled();
+    expect(clock.isPlaying()).toBe(false);
+    expect(actions.updateStatus).toHaveBeenLastCalledWith('watching');
+
+    // Paused by its parent mid-play, it stays paused
+    clock.play();
+    advance(1);
+    clock.pause();
+    tickLivePlayback(runtime, clock, 'Standard:9', actions);
+    expect(actions.resume).not.toHaveBeenCalled();
+    expect(clock.isPlaying()).toBe(false);
+  });
+
+  test('keeps the whole play to seek back to, behind any playhead', () => {
+    const { runtime, replay, clock, actions, appendChunk } = fixture();
+    runtime.controlled = true;
+    runtime.mapLoaded = true;
+    appendChunk(0, 180, 90);
+    runtime.playbackClock = clock;
+    clock.seek(170);
+    tickLivePlayback(runtime, clock, 'Standard:9', actions);
+    pruneLiveReplay(runtime, runtime.latestFrameTime);
+    expect(replay.poses[0]?.time).toBe(0);
+    expect(replay.poses).toHaveLength(180 * 90);
+    clock.seek(5);
+    expectInterpolatedPose(replay, 5.004);
+  });
+
+  test("ignores the player's in-game pauses: its parent pauses it", () => {
+    const { runtime, clock, actions, appendChunk } = fixture();
+    runtime.controlled = true;
+    runtime.mapLoaded = true;
+    appendChunk(0, 30);
+    scheduleReplayPause(
+      runtime.pendingPauseEvents,
+      create(ReplayPauseEventSchema, { paused: true, timeSeconds: 10 }),
+      runtime.receivedPoseFrameCount,
+    );
+    clock.seek(12);
+    clock.play();
+    tickLivePlayback(runtime, clock, 'Standard:9', actions);
+    expect(runtime.streamPaused).toBe(false);
+    expect(actions.pause).not.toHaveBeenCalled();
+    expect(clock.isPlaying()).toBe(true);
   });
 });
