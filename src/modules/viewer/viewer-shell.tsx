@@ -742,6 +742,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
         multiview.replayUrl === undefined ? live.seekableRange() : { start: 0, end: transport.duration },
       play: () => transportRef.current.play(),
       pause: () => transportRef.current.pause(),
+      setRate: (rate) => transportRef.current.setPlaybackRate(rate),
       correctDrift: (time) => transport.clockRef.current?.correctDrift(time),
     });
   }, [

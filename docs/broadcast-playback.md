@@ -109,3 +109,24 @@ Every command moves all recorded tiles to one shared time, so play and pause
 also clear accumulated drift. While playing, the usual drift correction keeps
 them aligned. Audio follows the normal rule: only the player with the highest
 `masterVolume` is audible, so set the other players to `0`.
+
+To show tiles at different times (e.g. two POVs out of sync as they were on
+stream), seek one tile by its id:
+
+```ts
+iframe.contentWindow.postMessage(
+  { type: 'beatkhana:multiview-control', version: 1, action: 'seek', time: 41.5, tileId: 'p2' },
+  '*',
+);
+```
+
+That tile then keeps its own time: drift correction leaves it alone, and play
+and pause do not move it. A `seek` without `tileId` moves every recorded tile
+to one time again and ends this.
+
+To play the recorded tiles faster or slower (e.g. following a debug playback at
+4x), set their speed; 1 is normal, from 0.01 to 16:
+
+```ts
+iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'rate', rate: 4 }, '*');
+```

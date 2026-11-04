@@ -34,6 +34,7 @@ export interface MultiviewPlaybackSnapshot {
   seekableRange(): { start: number; end: number } | null;
   play(): void;
   pause(): void;
+  setRate(rate: number): void;
   correctDrift(time: number): void;
 }
 

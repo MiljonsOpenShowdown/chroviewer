@@ -42,15 +42,25 @@ export interface MultiviewConfigMessage {
  * Playback control. `play`, `pause` and `seek` drive recorded replays (every
  * replay tile at once). `sync` moves the other live tiles to the anchor tile's
  * song time, or the nearest one each has data for. The anchor never moves.
+ * `rate` sets the playback speed of every replay tile.
  */
 export interface MultiviewControlMessage {
   type: 'beatkhana:multiview-control';
   version: 1;
-  action: 'play' | 'pause' | 'seek' | 'sync';
+  action: 'play' | 'pause' | 'seek' | 'sync' | 'rate';
   /** Song time in seconds, required for `seek`. */
   time?: number;
   /** The tile id whose time the others follow, required for `sync`. */
   anchorId?: string;
+  /**
+   * `seek` only: moves just this replay tile, e.g. to show two tiles out of
+   * sync as they were on stream. The tile then keeps its own time: no drift
+   * correction towards the others, and `play` / `pause` leave its time alone,
+   * until a `seek` without a tile id moves every replay tile together again.
+   */
+  tileId?: string;
+  /** `rate` only: playback speed, 1 is normal (0.01 to 16). */
+  rate?: number;
 }
 
 export interface MultiviewStateMessage {

@@ -57,7 +57,15 @@ function validControl(value: Record<string, unknown>): value is Record<string, u
   if (value.version !== 1) return false;
   if (value.action === 'play' || value.action === 'pause') return true;
   if (value.action === 'sync') return typeof value.anchorId === 'string';
-  return value.action === 'seek' && typeof value.time === 'number' && Number.isFinite(value.time) && value.time >= 0;
+  if (value.action === 'rate')
+    return typeof value.rate === 'number' && Number.isFinite(value.rate) && value.rate >= 0.01 && value.rate <= 16;
+  return (
+    value.action === 'seek' &&
+    typeof value.time === 'number' &&
+    Number.isFinite(value.time) &&
+    value.time >= 0 &&
+    (value.tileId === undefined || typeof value.tileId === 'string')
+  );
 }
 
 function validPlayer(value: unknown): value is MultiviewPlayerConfig {
@@ -170,6 +178,9 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
   const correctionStateRef = useRef(new Map<string, MultiviewCorrectionState>());
   const correctingRef = useRef(new Set<string>());
   const nextSyncCheckRef = useRef(new Map<string, number>());
+  // Replay tiles seeked on their own (a control with a tileId): they keep
+  // their own time until a seek of every replay tile
+  const heldRef = useRef(new Set<string>());
   const scoreTimelinesRef = useRef(new Map<string, EmbeddedRealtimeScoreTimeline>());
   const playerIdentitiesRef = useRef(new Map<string, string>());
   const lastStatePublishRef = useRef(Number.NEGATIVE_INFINITY);
@@ -210,6 +221,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
           correctionStateRef.current.delete(player.id);
           correctingRef.current.delete(player.id);
           nextSyncCheckRef.current.delete(player.id);
+          heldRef.current.delete(player.id);
         }
         if (scoreTimeline === undefined) {
           scoreTimeline = new EmbeddedRealtimeScoreTimeline();
@@ -276,15 +288,31 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         const playback = playbackRef.current.get(id);
         return playback === undefined ? [] : [{ id, playback }];
       });
+      if (data.action === 'rate') {
+        for (const { playback } of tiles) playback.setRate(data.rate ?? 1);
+        return;
+      }
+      if (data.action === 'seek' && data.tileId !== undefined) {
+        const tile = tiles.find(({ id }) => id === data.tileId);
+        if (tile === undefined) return;
+        heldRef.current.add(tile.id);
+        correctionStateRef.current.delete(tile.id);
+        correctingRef.current.delete(tile.id);
+        nextSyncCheckRef.current.delete(tile.id);
+        tile.playback.seek(data.time ?? 0);
+        return;
+      }
+      if (data.action === 'seek') heldRef.current.clear();
       // Every replay tile is moved to one shared time, so play and pause also
       // remove any drift that built up instead of waiting for a correction.
+      // Held tiles keep their own time.
       const time = data.action === 'seek' ? (data.time ?? 0) : timeline.primary(now)?.time;
       for (const { id, playback } of tiles) {
         correctionStateRef.current.delete(id);
         correctingRef.current.delete(id);
         nextSyncCheckRef.current.delete(id);
         if (data.action === 'pause') playback.pause();
-        if (time !== undefined) playback.seek(time);
+        if (time !== undefined && !heldRef.current.has(id)) playback.seek(time);
         if (data.action === 'play') playback.play();
       }
     }
@@ -329,6 +357,9 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
     host.retainTiles(activeIds);
     for (const id of playbackRef.current.keys()) {
       if (!activeIds.has(id)) playbackRef.current.delete(id);
+    }
+    for (const id of heldRef.current) {
+      if (!activeIds.has(id)) heldRef.current.delete(id);
     }
     for (const id of correctionStateRef.current.keys()) {
       if (!activeIds.has(id)) correctionStateRef.current.delete(id);
@@ -431,7 +462,8 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
             ? entry.playback.mapHash === primary.playback.mapHash
             : entry.playback.map?.title === primary.playback.map?.title;
         const ownSample = timeline.ownSample(entry.player.id, now);
-        const syncReady = entry.playback.status === 'watching' && entry.playback.playing;
+        const syncReady =
+          entry.playback.status === 'watching' && entry.playback.playing && !heldRef.current.has(entry.player.id);
         const aheadBy = ownSample === null ? 0 : ownSample.time - primarySample.time;
         if (!sameMap || !syncReady) {
           correctionStateRef.current.delete(entry.player.id);
