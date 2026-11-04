@@ -17,6 +17,26 @@ export type LiveStatus =
   | 'reconnecting'
   | 'error';
 
+/**
+ * What a live connection did, for the multiview's stream timeline
+ * (MultiviewEventsMessage). Times are song seconds.
+ */
+export type LiveTimelineEvent =
+  | { type: 'status'; status: LiveStatus }
+  /** `midway`: joined a play already under way (caught-up history, or started long ago). */
+  | { type: 'stream-start'; streamId: string; mapHash: string; midway: boolean }
+  /** `completion`: the end packet's ReplayCompletion in lower case ("passed", "failed", "quit", ...). */
+  | { type: 'stream-end'; streamId: string; completion: string; songTime: number }
+  /** One accepted chunk; `gap` is how many sequence numbers were skipped before it. */
+  | { type: 'chunk'; frames: number; songTime: number; gap: number }
+  | { type: 'catch-up'; ok: boolean; packets: number; ms: number; error?: string }
+  /** Playing past the newest received frame: the renderer has nothing new to show. */
+  | { type: 'stall'; songTime: number; latestFrameTime: number }
+  | { type: 'stall-end'; songTime: number; ms: number }
+  | { type: 'seek'; from: number; to: number }
+  | { type: 'pause'; songTime: number }
+  | { type: 'warning'; message: string };
+
 export interface LiveTarget {
   playerId: string;
   source?: 'scoresaber' | 'ta' | 'cocu';
@@ -83,6 +103,8 @@ export interface LiveExperienceOptions {
    */
   liveBufferSeconds?: number;
   startBarrier?: { id: string; barrier: MultiviewStartBarrier };
+  /** Receives the connection's stream timeline; only multiview tiles pass one. */
+  onLiveEvent?: (event: LiveTimelineEvent) => void;
   hasLiveMap: (hash: string) => boolean;
   loadLiveReplay: (hash: string, replay: Replay) => Promise<SourceResult<void>>;
   selectedKey: string;

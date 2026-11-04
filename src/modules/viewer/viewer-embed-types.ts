@@ -1,7 +1,7 @@
 import type { BeatmapParser } from '../../core/beatmap/worker/client';
 import type { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
 import type { LiveMapCache } from '../live/live-map-cache';
-import type { LiveStatus } from '../live/live-types';
+import type { LiveStatus, LiveTimelineEvent } from '../live/live-types';
 import type { MultiviewReplayScore } from '../multiview/multiview-protocol';
 import type { MultiviewStartBarrier } from '../multiview/multiview-start-barrier';
 import type { MultiviewTimeline } from '../multiview/multiview-timeline';
@@ -56,6 +56,8 @@ export interface MultiviewTileOptions {
   mapCache: LiveMapCache;
   parser: BeatmapParser;
   onPlayback(snapshot: MultiviewPlaybackSnapshot): void;
+  /** The tile's live connection timeline, for MultiviewEventsMessage. */
+  onLiveEvent: (event: LiveTimelineEvent) => void;
 }
 
 export interface MultiviewTileProps {

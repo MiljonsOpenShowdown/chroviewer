@@ -17,7 +17,7 @@ import {
 } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
 import type { LiveRuntime } from './live-runtime';
 import { initialLiveState } from './live-state';
-import type { LiveExperienceOptions } from './live-types';
+import type { LiveExperienceOptions, LiveTimelineEvent } from './live-types';
 import { useLiveConnection } from './use-live-connection';
 
 const { useEffectMock } = vi.hoisted(() => ({ useEffectMock: vi.fn() }));
@@ -90,11 +90,13 @@ async function connectPlayer(id: string, barrier: MultiviewStartBarrier) {
   const clock = createClock(180, 120, { now: () => performance.now() / 1000 });
   const runtimeRef = { current: null as LiveRuntime | null };
   let state = initialLiveState;
+  const events: LiveTimelineEvent[] = [];
   const optionsRef = {
     current: {
       target,
       externalTimeline: true,
       startBarrier: { id, barrier },
+      onLiveEvent: (event: LiveTimelineEvent) => events.push(event),
       selectedKey: 'Standard:9',
       hasLiveMap: () => true,
       loadLiveReplay: async () => Result.ok(undefined),
@@ -135,10 +137,15 @@ async function connectPlayer(id: string, barrier: MultiviewStartBarrier) {
   let sequence = 0n;
   return {
     clock,
+    events,
     runtimeRef,
     transport: optionsRef.current.transport,
     get status() {
       return state.status;
+    },
+    /** A packet lost on the way: the next chunk skips its sequence number. */
+    lose() {
+      sequence++;
     },
     chunk(start: number, seconds: number, fps = 144) {
       receive({
@@ -226,5 +233,42 @@ describe('TA compositor pose retention through the connection', () => {
       expect(player.status).toBe('watching');
       expect(player.transport.seek).toHaveBeenCalledExactlyOnceWith(50);
     }
+  });
+});
+
+describe('stream timeline', () => {
+  test('reports the start, chunks with lost packets, a stall past the newest frame and the end', async () => {
+    const player = await connectPlayer('0', compositor(1, false));
+    player.chunk(0, 2);
+    player.lose();
+    player.chunk(2, 1);
+    // Plays on past 3 s with nothing newer: a stall
+    await vi.advanceTimersByTimeAsync(6000);
+    player.end(3);
+    vi.advanceTimersByTime(200);
+
+    const { events } = player;
+    expect(events[0]).toEqual({ type: 'status', status: 'connecting' });
+    expect(events).toContainEqual({
+      type: 'stream-start',
+      streamId: 'stream:0',
+      mapHash: 'A'.repeat(40),
+      midway: false,
+    });
+    expect(events.filter((event) => event.type === 'chunk')).toEqual([
+      { type: 'chunk', frames: 288, songTime: 2, gap: 0 },
+      { type: 'chunk', frames: 144, songTime: 3, gap: 1 },
+    ]);
+    expect(events).toContainEqual({ type: 'status', status: 'watching' });
+    expect(events).toContainEqual({ type: 'seek', from: 0, to: 0 });
+    const stall = events.findIndex((event) => event.type === 'stall');
+    const end = events.findIndex((event) => event.type === 'stream-end');
+    const stallEnd = events.findIndex((event) => event.type === 'stall-end');
+    expect(stall).toBeGreaterThan(-1);
+    expect(events[stall]).toMatchObject({ latestFrameTime: expect.closeTo(3, 1) });
+    expect(events[end]).toEqual({ type: 'stream-end', streamId: 'stream:0', completion: 'passed', songTime: 3 });
+    // The ended play is no longer starved
+    expect(stall).toBeLessThan(end);
+    expect(stallEnd).toBeGreaterThan(end);
   });
 });

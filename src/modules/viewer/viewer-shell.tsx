@@ -420,6 +420,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
     taSyncGroup: search.syncGroup,
     taCatchupUrl: search.catchupUrl,
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
+    onLiveEvent: multiview?.onLiveEvent,
     hasLiveMap: (hash) => sources.hasLiveMap(hash),
     loadLiveReplay: (hash, replay) => {
       if (taLiveSource && embeddedLights === null && search.lights === undefined) {

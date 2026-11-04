@@ -6,10 +6,13 @@ import { broadcastSettingsForPlayerCount } from '../../renderer/render-performan
 import { fetchBeatSaverHash } from '../../sources/beatsaver/provider';
 import { EmbeddedRealtimeScoreTimeline } from '../live/embedded-realtime-score-sync';
 import { LiveMapCache } from '../live/live-map-cache';
+import type { LiveTimelineEvent } from '../live/live-types';
 import type { MultiviewPlaybackSnapshot, MultiviewTileProps } from '../viewer/viewer-embed-types';
+import { captureViewerConsole, MultiviewEventLog } from './multiview-event-log';
 import type {
   MultiviewConfigMessage,
   MultiviewControlMessage,
+  MultiviewEventsMessage,
   MultiviewPerfMessage,
   MultiviewPlayerConfig,
   MultiviewReplayScore,
@@ -185,6 +188,8 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
   const playerIdentitiesRef = useRef(new Map<string, string>());
   const lastStatePublishRef = useRef(Number.NEGATIVE_INFINITY);
   const nativeBridge = typeof window === 'undefined' ? undefined : window.beatKhanaNativeCompositor;
+  // The tiles' stream timelines, for the parent page only (not the native compositor)
+  const eventLog = useMemo(() => (nativeBridge === undefined ? new MultiviewEventLog() : null), [nativeBridge]);
 
   useEffect(() => {
     const sharedParser = new BeatmapParser();
@@ -272,7 +277,10 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         correctingRef.current.delete(player.id);
         nextSyncCheckRef.current.delete(player.id);
         const time = multiviewSyncTime(anchor.time, range);
-        if (Math.abs(own.time - time) > 0.02) playback.seek(time);
+        if (Math.abs(own.time - time) > 0.02) {
+          eventLog?.add(player.id, player.playerId, { type: 'seek', from: own.time, to: time, reason: 'sync' });
+          playback.seek(time);
+        }
       }
     }
     function applyControl(data: MultiviewControlMessage) {
@@ -288,6 +296,8 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         const playback = playbackRef.current.get(id);
         return playback === undefined ? [] : [{ id, playback }];
       });
+      const logSeek = (id: string, playback: MultiviewPlaybackSnapshot, to: number) =>
+        eventLog?.add(id, playback.playerId, { type: 'seek', from: playback.time, to, reason: 'control' });
       if (data.action === 'rate') {
         for (const { playback } of tiles) playback.setRate(data.rate ?? 1);
         return;
@@ -299,6 +309,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         correctionStateRef.current.delete(tile.id);
         correctingRef.current.delete(tile.id);
         nextSyncCheckRef.current.delete(tile.id);
+        logSeek(tile.id, tile.playback, data.time ?? 0);
         tile.playback.seek(data.time ?? 0);
         return;
       }
@@ -312,7 +323,10 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         correctingRef.current.delete(id);
         nextSyncCheckRef.current.delete(id);
         if (data.action === 'pause') playback.pause();
-        if (time !== undefined && !heldRef.current.has(id)) playback.seek(time);
+        if (time !== undefined && !heldRef.current.has(id)) {
+          logSeek(id, playback, time);
+          playback.seek(time);
+        }
         if (data.action === 'play') playback.play();
       }
     }
@@ -338,7 +352,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
     window.addEventListener('message', receive);
     window.parent.postMessage({ type: 'beatkhana:multiview-ready', version: 1 }, '*');
     return () => window.removeEventListener('message', receive);
-  }, [mapCache, nativeBridge, playerDefaults, startBarrier, timeline]);
+  }, [eventLog, mapCache, nativeBridge, playerDefaults, startBarrier, timeline]);
 
   useEffect(() => {
     if (host === null) return;
@@ -490,7 +504,10 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
             Number.isFinite(threshold) ? Math.max(0.025, threshold / 1000) : 0.2,
           );
           correctionStateRef.current.set(entry.player.id, correction.state);
-          if (correction.correct) correctingRef.current.add(entry.player.id);
+          if (correction.correct) {
+            correctingRef.current.add(entry.player.id);
+            eventLog?.add(entry.player.id, entry.player.playerId, { type: 'drift', aheadBy });
+          }
         }
         if (correctingRef.current.has(entry.player.id)) {
           entry.playback.correctDrift(primarySample.time);
@@ -508,7 +525,40 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
       window.clearInterval(timer);
       window.clearInterval(scoreTimer);
     };
-  }, [nativeBridge, players, timeline]);
+  }, [eventLog, nativeBridge, players, timeline]);
+
+  // Twice a second, what happened since in each tile's stream, and the page's
+  // console warnings and errors. Kept from the start (up to the log's limit),
+  // so the connection's first steps are sent once the parent first speaks.
+  useEffect(() => {
+    if (eventLog === null) return;
+    const stopCapture = captureViewerConsole((level, message) =>
+      eventLog.add(null, null, { type: 'console', level, message }),
+    );
+    const timer = window.setInterval(() => {
+      const origin = parentOriginRef.current;
+      if (origin === null) return;
+      const events = eventLog.take();
+      if (events === null) return;
+      const message: MultiviewEventsMessage = {
+        type: 'beatkhana:multiview-events',
+        version: 1,
+        sentAt: Date.now(),
+        events,
+      };
+      window.parent.postMessage(message, origin === 'null' ? '*' : origin);
+    }, 500);
+    return () => {
+      window.clearInterval(timer);
+      stopCapture();
+    };
+  }, [eventLog]);
+
+  const handleLiveEvent = useCallback(
+    (id: string, event: LiveTimelineEvent) =>
+      eventLog?.add(id, playersRef.current.find((player) => player.id === id)?.playerId ?? null, event),
+    [eventLog],
+  );
 
   // Once a second, how the shared renderer keeps up, for the parent's profiling.
   // Not sent to the native compositor, which has no use for it.
@@ -628,6 +678,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
               settings: player.settings,
               parser,
               onPlayback: (snapshot) => handlePlayback(player.id, snapshot),
+              onLiveEvent: (event) => handleLiveEvent(player.id, event),
             }}
           />
         ))}

@@ -318,6 +318,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
     taCatchupUrl: search.catchupUrl,
     liveBufferSeconds: liveBufferSetting(multiview?.settings?.liveBufferSeconds),
     startBarrier: multiview === undefined ? undefined : { id: multiview.id, barrier: multiview.startBarrier },
+    onLiveEvent: multiview?.onLiveEvent,
     hasLiveMap: (hash) => sources.hasLiveMap(hash),
     loadLiveReplay: (hash, replay) => {
       if (taLiveSource && embeddedLights === null && search.lights === undefined) {

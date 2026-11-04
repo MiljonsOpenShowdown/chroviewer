@@ -1,4 +1,5 @@
 import type { MultiviewRenderStats } from '../../renderer/multiview-renderer-host';
+import type { LiveTimelineEvent } from '../live/live-types';
 
 export interface MultiviewPlayerConfig {
   id: string;
@@ -113,6 +114,46 @@ export interface MultiviewReplayScore {
 export interface MultiviewReadyMessage {
   type: 'beatkhana:multiview-ready';
   version: 1;
+}
+
+/**
+ * One step of a tile's stream timeline. The connection's events (see
+ * LiveTimelineEvent), except that chunks come summed up per tile per message,
+ * plus what the multiview itself does.
+ */
+export type MultiviewTimelineEvent =
+  | Exclude<LiveTimelineEvent, { type: 'chunk' | 'seek' }>
+  /**
+   * The chunks a tile accepted since the last message: their pose frames, the
+   * song times of the first and last, and the sequence numbers skipped.
+   */
+  | { type: 'chunks'; count: number; frames: number; from: number; to: number; gaps: number }
+  /** `live`: the connection's own (start, pause events, stalls); `sync` and `control`: the parent's. */
+  | { type: 'seek'; from: number; to: number; reason: 'live' | 'sync' | 'control' }
+  /** A drift correction began: the tile was this many seconds ahead of the primary (negative: behind). */
+  | { type: 'drift'; aheadBy: number }
+  /** A console warning or error, or an uncaught error, anywhere in the viewer page (no tile). */
+  | { type: 'console'; level: 'warn' | 'error'; message: string }
+  /** Events left out of this message to keep it small. */
+  | { type: 'dropped'; count: number };
+
+export type MultiviewTimelineEntry = MultiviewTimelineEvent & {
+  /** The tile's config id; null for page-wide events. */
+  tileId: string | null;
+  playerId: string | null;
+  /** Date.now() in the viewer page, the same clock as the message's sentAt. */
+  at: number;
+};
+
+/**
+ * Twice a second while anything happened, each tile's stream timeline, for
+ * the parent to keep (e.g. a match recorder). Not sent to the native compositor.
+ */
+export interface MultiviewEventsMessage {
+  type: 'beatkhana:multiview-events';
+  version: 1;
+  sentAt: number;
+  events: MultiviewTimelineEntry[];
 }
 
 /** Once a second, how the shared renderer keeps up, for profiling in the parent page. */

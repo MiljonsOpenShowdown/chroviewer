@@ -6,6 +6,7 @@ import { Result } from 'better-result';
 import type { LiveChatMessage } from './generated/proto/scoresaber/live/v1/chat_pb';
 import { LudusPlayState } from './generated/proto/scoresaber/live/v1/common_pb';
 import {
+  ReplayCompletion,
   ReplayStreamPacketSchema,
   type ReplayStreamPacket,
 } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
@@ -26,7 +27,13 @@ import {
   type LiveRuntime,
 } from './live-runtime';
 import { initialLiveState } from './live-state';
-import type { LiveExperienceOptions, LiveExperienceState, LiveStatus, LiveTarget } from './live-types';
+import type {
+  LiveExperienceOptions,
+  LiveExperienceState,
+  LiveStatus,
+  LiveTarget,
+  LiveTimelineEvent,
+} from './live-types';
 import {
   decodeLudusEnvelope,
   encodeConnectEnvelope,
@@ -71,7 +78,23 @@ export function useLiveConnection(
     runtimeRef.current = runtime;
     setState(initialLiveState);
 
+    // The stream timeline (onLiveEvent): the status it was last told, and
+    // when playback ran past the newest frame (performance.now), if it has
+    let reportedStatus: LiveStatus | null = null;
+    let stalledAt: number | null = null;
+
+    function emit(event: LiveTimelineEvent) {
+      optionsRef.current.onLiveEvent?.(event);
+    }
+
+    function reportStatus(status: LiveStatus) {
+      if (status === reportedStatus) return;
+      reportedStatus = status;
+      emit({ type: 'status', status });
+    }
+
     function updateConnectionState(status: LiveStatus) {
+      reportStatus(status);
       const canChat =
         runtime.socket?.readyState === WebSocket.OPEN &&
         runtime.connectionId !== '' &&
@@ -191,6 +214,7 @@ export function useLiveConnection(
       // (a dead or slow one would hold it for the whole wait).
       const serverStart = Number(start.serverStartTimeUnixMs);
       const joiningMidPlay = applyingCatchup || (serverStart > 0 && Date.now() - serverStart > midPlayJoinMs);
+      emit({ type: 'stream-start', streamId: packet.streamId, mapHash: liveMapHash(start), midway: joiningMidPlay });
       if (startBarrier?.barrier.enabled && !joiningMidPlay) {
         runtime.compositorBufferSeconds = startBarrier.barrier.waitSeconds;
         startBarrier.barrier.begin(
@@ -208,6 +232,7 @@ export function useLiveConnection(
       runtime.playbackRate = replay.metadata.songSpeed && replay.metadata.songSpeed > 0 ? replay.metadata.songSpeed : 1;
       const hash = liveMapHash(start);
       if (!/^[0-9A-F]{40}$/.test(hash)) {
+        emit({ type: 'warning', message: 'The stream start has no valid map hash' });
         updateConnectionState('error');
         return;
       }
@@ -219,6 +244,7 @@ export function useLiveConnection(
         const result = await optionsRef.current.loadLiveReplay(hash, replay);
         if (disposed || runtime.replay !== replay) return;
         if (result.isErr()) {
+          emit({ type: 'warning', message: `Map ${hash} failed to load: ${result.error.message}` });
           updateConnectionState('error');
           return;
         }
@@ -235,6 +261,13 @@ export function useLiveConnection(
 
     function handleReplayEnd(packet: ReplayStreamPacket, deferPlaybackAttempt: boolean) {
       const result = applyLiveReplayEnd(runtime, packet);
+      if (result !== 'ignored' && packet.body.case === 'end')
+        emit({
+          type: 'stream-end',
+          streamId: packet.streamId,
+          completion: (ReplayCompletion[packet.body.value.completion] ?? 'unknown').toLowerCase(),
+          songTime: runtime.latestSongTime,
+        });
       if ((activeTarget.source === 'ta' || activeTarget.source === 'cocu') && result !== 'ignored')
         runtime.playbackAttemptPending = true;
       if (result === 'waiting' && activeTarget.source !== 'ta') {
@@ -258,6 +291,7 @@ export function useLiveConnection(
           }
           return;
         }
+        const previousSequence = runtime.lastReplaySequence;
         if (acceptLiveReplayPacket(runtime, packet)) {
           applyLiveReplayChunk(
             runtime,
@@ -266,6 +300,14 @@ export function useLiveConnection(
             optionsRef.current.appendReplayHeightEvents,
             optionsRef.current.refreshReplayDisplay,
           );
+          const sequence = packetSequence(packet);
+          emit({
+            type: 'chunk',
+            frames: packet.body.value.events?.poseFrames.length ?? 0,
+            songTime: Number(packet.body.value.cursor?.songTimeMs ?? 0n) / 1000,
+            gap:
+              previousSequence > 0n && sequence > previousSequence + 1n ? Number(sequence - previousSequence - 1n) : 0,
+          });
           if (!deferPlaybackAttempt) tickPlayback();
         }
         return;
@@ -371,6 +413,7 @@ export function useLiveConnection(
             pendingChatMessageIds: [...runtime.pendingChatMessageIds],
             status: body.value.retryable ? current.status : 'error',
           }));
+          if (!body.value.retryable) reportStatus('error');
           break;
         }
       }
@@ -389,6 +432,7 @@ export function useLiveConnection(
     }
 
     async function catchUp(url: string) {
+      const startedAt = performance.now();
       const fetched = await Result.tryPromise({
         try: async () => {
           const response = await fetch(url, { signal: AbortSignal.timeout(catchupTimeoutMs) });
@@ -398,7 +442,9 @@ export function useLiveConnection(
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       });
       if (disposed) return;
+      const ms = Math.round(performance.now() - startedAt);
       if (fetched.isOk()) {
+        emit({ type: 'catch-up', ok: true, packets: fetched.value.length, ms });
         // Start first, then everything else in send order
         const packets = [...fetched.value].sort((left, right) => {
           if (left.body.case === 'start') return -1;
@@ -412,6 +458,7 @@ export function useLiveConnection(
       } else {
         // Seen in the browser console; the viewer carries on with the live stream alone
         console.warn(`[live] catch-up skipped: ${fetched.error.message}`);
+        emit({ type: 'catch-up', ok: false, packets: 0, ms, error: fetched.error.message });
       }
       const held = heldPackets ?? [];
       heldPackets = null;
@@ -523,7 +570,10 @@ export function useLiveConnection(
 
     function pausePlayback() {
       const transport = optionsRef.current.transport;
-      if (transport.clockRef.current?.isPlaying()) transport.togglePlay();
+      const clock = transport.clockRef.current;
+      if (!clock?.isPlaying()) return;
+      emit({ type: 'pause', songTime: clock.currentTime() });
+      transport.togglePlay();
     }
 
     function resumePlayback() {
@@ -541,7 +591,30 @@ export function useLiveConnection(
     }
 
     function seekPlayback(time: number) {
-      optionsRef.current.transport.seek(Math.max(0, time));
+      const transport = optionsRef.current.transport;
+      emit({ type: 'seek', from: transport.clockRef.current?.currentTime() ?? 0, to: Math.max(0, time) });
+      transport.seek(Math.max(0, time));
+    }
+
+    // A stall: the clock runs past the newest received frame of a play that
+    // has not ended, so the renderer has nothing new to show
+    function checkStall() {
+      const clock = optionsRef.current.transport.clockRef.current;
+      const songTime = clock?.currentTime() ?? 0;
+      const starved =
+        clock !== null &&
+        runtime.replay !== null &&
+        clock.isPlaying() &&
+        !runtime.streamEnding &&
+        runtime.latestFrameTime > 0 &&
+        songTime > runtime.latestFrameTime + 0.05;
+      if (starved && stalledAt === null) {
+        stalledAt = performance.now();
+        emit({ type: 'stall', songTime, latestFrameTime: runtime.latestFrameTime });
+      } else if (!starved && stalledAt !== null) {
+        emit({ type: 'stall-end', songTime, ms: Math.round(performance.now() - stalledAt) });
+        stalledAt = null;
+      }
     }
 
     const playbackActions = {
@@ -552,6 +625,7 @@ export function useLiveConnection(
     };
 
     function tickPlayback() {
+      checkStall();
       const transport = optionsRef.current.transport;
       const clock = transport.clockRef.current;
       const startBarrier = optionsRef.current.startBarrier;
