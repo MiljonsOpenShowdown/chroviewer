@@ -86,6 +86,12 @@ function configurationSignature(players: MultiviewPlayerConfig[]) {
   return JSON.stringify(players.map(({ score: _score, ...configuration }) => configuration));
 }
 
+/** Seconds the tile can play on from `time` before it runs out of frames; null before it has any. */
+function bufferedAhead(playback: MultiviewPlaybackSnapshot | undefined, time: number) {
+  const range = playback?.seekableRange() ?? null;
+  return range === null ? null : Math.max(0, range.end - time);
+}
+
 interface TilePlaybackState {
   duration: number;
   error: string;
@@ -379,6 +385,11 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
           status: playbackRef.current.get(player.id)?.status ?? 'waiting',
           streamId: playbackRef.current.get(player.id)?.streamId ?? null,
           time: timeline.sampleFor(player.id, now)?.time ?? 0,
+          playbackRate: playbackRef.current.get(player.id)?.playbackRate ?? null,
+          bufferedAhead: bufferedAhead(
+            playbackRef.current.get(player.id),
+            timeline.sampleFor(player.id, now)?.time ?? 0,
+          ),
         })),
       };
       if (nativeBridge !== undefined) nativeBridge.send(message);

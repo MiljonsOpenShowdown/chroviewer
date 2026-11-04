@@ -78,6 +78,13 @@ export interface MultiviewStateMessage {
     /** The live TA stream (one play) the tile shows; null for a recorded replay or before one. */
     streamId: string | null;
     time: number;
+    /** The tile's playback speed; null before it has a playback. */
+    playbackRate: number | null;
+    /**
+     * Seconds of frames the tile has past `time`, from its seekable range:
+     * how close it is to stalling. Null before it has any.
+     */
+    bufferedAhead: number | null;
   }>;
 }
 
