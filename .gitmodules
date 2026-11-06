@@ -1,3 +1,6 @@
 [submodule "public/ai"]
 	path = public/ai
 	url = https://github.com/MiljonsOpenShowdown/MOSes_Models.git
+[submodule "public/sabers/mos"]
+	path = public/sabers/mos
+	url = https://github.com/MiljonsOpenShowdown/MOS_Sabers.git

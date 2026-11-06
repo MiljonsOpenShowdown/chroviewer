@@ -62,12 +62,12 @@ interface CustomSaberTrailDefinition {
 }
 
 const MODEL_PATHS: Record<CustomSaberModelId, string> = {
-  'ko-circles': 'ko-circles.glb',
-  'ko-monkey-3': 'ko-monkey-3.glb',
-  'mos-cc': 'mos-cc.glb',
-  'mos-proficient': 'mos-proficient.glb',
-  'mos-tourney': 'mos-tourney.glb',
-  'mos-winner': 'mos-winner.glb',
+  'ko-circles': 'models/ko-circles.glb',
+  'ko-monkey-3': 'models/ko-monkey-3.glb',
+  'mos-cc': 'mos/models/mos-cc.glb',
+  'mos-proficient': 'mos/models/mos-proficient.glb',
+  'mos-tourney': 'mos/models/mos-tourney.glb',
+  'mos-winner': 'mos/models/mos-winner.glb',
 };
 
 const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
@@ -75,33 +75,33 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
   'ko-circles': {
     base: 1,
     tip: 1.034999967,
-    texture: 'ko-circles-trail.png',
+    texture: 'textures/ko-circles-trail.png',
   },
   'ko-monkey-3': {
     base: 1,
     tip: 1.027999997,
-    texture: 'ko-monkey-3-trail.png',
+    texture: 'textures/ko-monkey-3-trail.png',
   },
   // The MOS ThinSabers share one trail
   'mos-cc': {
     base: 0.826900005,
     tip: 1.01100004,
-    texture: 'mos-trail.png',
+    texture: 'mos/textures/mos-trail.png',
   },
   'mos-proficient': {
     base: 0.826900005,
     tip: 1.01100004,
-    texture: 'mos-trail.png',
+    texture: 'mos/textures/mos-trail.png',
   },
   'mos-tourney': {
     base: 0.826900005,
     tip: 1.01100004,
-    texture: 'mos-trail.png',
+    texture: 'mos/textures/mos-trail.png',
   },
   'mos-winner': {
     base: 0.826900005,
     tip: 1.01100004,
-    texture: 'mos-trail.png',
+    texture: 'mos/textures/mos-trail.png',
   },
 };
 
@@ -144,7 +144,7 @@ function loadTexture(fileName: string) {
   const existing = textureCache.get(fileName);
   if (existing !== undefined) return existing;
   const loading = textureLoader
-    .loadAsync(`${import.meta.env.BASE_URL}sabers/textures/${fileName}`)
+    .loadAsync(`${import.meta.env.BASE_URL}sabers/${fileName}`)
     .then((texture) => {
       texture.colorSpace = SRGBColorSpace;
       texture.name = fileName;
@@ -162,7 +162,7 @@ async function loadTemplate(model: CustomSaberModelId): Promise<CustomSaberTempl
   const existing = templateCache.get(model);
   if (existing !== undefined) return existing;
   const loading = new GLTFLoader()
-    .loadAsync(`${import.meta.env.BASE_URL}sabers/models/${MODEL_PATHS[model]}`)
+    .loadAsync(`${import.meta.env.BASE_URL}sabers/${MODEL_PATHS[model]}`)
     .then((gltf) => {
       const sides: [CustomSaberPart[], CustomSaberPart[]] = [[], []];
       const sourceMaterials = new Set<Material>();

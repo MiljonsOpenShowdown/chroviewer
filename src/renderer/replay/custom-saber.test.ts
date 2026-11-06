@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { Box3, Color, SRGBColorSpace, Texture, TextureLoader, Vector2 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -87,51 +87,57 @@ test('loads the real Ko-Circles mesh with independent player colors, opaque hand
   }
 });
 
-test('renders the MOS handle as dark metal and its "M" plate as a flat glow', async () => {
-  const bytes = readFileSync(new URL('../../../public/sabers/models/mos-tourney.glb', import.meta.url));
-  const gltf = await new GLTFLoader().parseAsync(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    '',
-  );
-  vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(gltf);
-  const fog: FogUniforms = {
-    _BloomPrePassTexture: { value: new Texture() },
-    _CustomFogTextureToScreenRatio: { value: new Vector2(1, 1) },
-    _CustomFogOffset: { value: 0 },
-    _CustomFogAttenuation: { value: 0 },
-    _CustomFogHeightFogStartY: { value: 0 },
-    _CustomFogHeightFogHeight: { value: 0 },
-  };
-  const lights = { directions: [], colors: [], positions: [], radii: [] };
-  const instance = await createCustomSaberInstance(
-    'mos-tourney',
-    0,
-    [
-      [1, 0, 0],
-      [0, 0, 1],
-    ],
-    fog,
-    lights,
-  );
+// The MOS sabers live in the private MOS_Sabers submodule, which may not be checked out
+const MOS_TOURNEY_GLB = new URL('../../../public/sabers/mos/models/mos-tourney.glb', import.meta.url);
 
-  const handle = instance.materials.find((material) => material.name === 'Metallic::surface');
-  const logo = instance.materials.find((material) => material.name === 'geen::static-glow');
-  if (handle === undefined || logo === undefined) throw new Error('MOS Tourney is missing its handle or logo');
-  const handleColor = shaderColorUniform(handle, '_Color');
-  expect(handleColor?.r).toBeLessThan(0.05);
-  expect(logo.uniforms._Brightness).toBeDefined();
-  expect(logo.uniforms._CoreColor).toBeUndefined();
-  expect(logo.transparent).toBe(false);
+test.skipIf(!existsSync(MOS_TOURNEY_GLB))(
+  'renders the MOS handle as dark metal and its "M" plate as a flat glow',
+  async () => {
+    const bytes = readFileSync(MOS_TOURNEY_GLB);
+    const gltf = await new GLTFLoader().parseAsync(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      '',
+    );
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(gltf);
+    const fog: FogUniforms = {
+      _BloomPrePassTexture: { value: new Texture() },
+      _CustomFogTextureToScreenRatio: { value: new Vector2(1, 1) },
+      _CustomFogOffset: { value: 0 },
+      _CustomFogAttenuation: { value: 0 },
+      _CustomFogHeightFogStartY: { value: 0 },
+      _CustomFogHeightFogHeight: { value: 0 },
+    };
+    const lights = { directions: [], colors: [], positions: [], radii: [] };
+    const instance = await createCustomSaberInstance(
+      'mos-tourney',
+      0,
+      [
+        [1, 0, 0],
+        [0, 0, 1],
+      ],
+      fog,
+      lights,
+    );
 
-  const blade = instance.materials.find((material) => material.name === 'CC 0.3::custom-glow');
-  if (blade === undefined) throw new Error('MOS Tourney is missing its blade');
-  const bladeMultiplier = blade.uniforms._ColorMultiplier?.value as number;
-  const logoBrightness = logo.uniforms._Brightness?.value as number;
-  applyCustomSaberBrightness(instance.brightnessBindings, 0.5);
-  expect(blade.uniforms._ColorMultiplier?.value).toBeCloseTo(bladeMultiplier * 0.5);
-  expect(logo.uniforms._Brightness?.value).toBeCloseTo(logoBrightness * 0.5);
-  applyCustomSaberBrightness(instance.brightnessBindings, 2);
-  expect(blade.uniforms._ColorMultiplier?.value).toBeCloseTo(bladeMultiplier * 2);
-  expect(blade.uniforms._BloomAlpha?.value).toBeLessThanOrEqual(1);
-  for (const material of instance.materials) material.dispose();
-});
+    const handle = instance.materials.find((material) => material.name === 'Metallic::surface');
+    const logo = instance.materials.find((material) => material.name === 'geen::static-glow');
+    if (handle === undefined || logo === undefined) throw new Error('MOS Tourney is missing its handle or logo');
+    const handleColor = shaderColorUniform(handle, '_Color');
+    expect(handleColor?.r).toBeLessThan(0.05);
+    expect(logo.uniforms._Brightness).toBeDefined();
+    expect(logo.uniforms._CoreColor).toBeUndefined();
+    expect(logo.transparent).toBe(false);
+
+    const blade = instance.materials.find((material) => material.name === 'CC 0.3::custom-glow');
+    if (blade === undefined) throw new Error('MOS Tourney is missing its blade');
+    const bladeMultiplier = blade.uniforms._ColorMultiplier?.value as number;
+    const logoBrightness = logo.uniforms._Brightness?.value as number;
+    applyCustomSaberBrightness(instance.brightnessBindings, 0.5);
+    expect(blade.uniforms._ColorMultiplier?.value).toBeCloseTo(bladeMultiplier * 0.5);
+    expect(logo.uniforms._Brightness?.value).toBeCloseTo(logoBrightness * 0.5);
+    applyCustomSaberBrightness(instance.brightnessBindings, 2);
+    expect(blade.uniforms._ColorMultiplier?.value).toBeCloseTo(bladeMultiplier * 2);
+    expect(blade.uniforms._BloomAlpha?.value).toBeLessThanOrEqual(1);
+    for (const material of instance.materials) material.dispose();
+  },
+);
