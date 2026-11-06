@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 import type { LightshowMode } from '../../../core/lighting/basic-light';
 import type { ViewerSettings } from '../../../core/viewer-settings';
 import type { TimelineMarker } from '../timeline-markers';
+import { AI_PLAYER_CHOICE } from '../use-ai-play';
 import { quantizedBeatAt } from '../viewer-timeline';
 import { BeatStepControl } from './beat-step-control';
 import { LightshowMenu } from './lightshow-menu';
@@ -17,6 +18,7 @@ import { VolumeMenu } from './volume-menu';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 
 import { cn } from '@/lib/utils';
@@ -34,6 +36,10 @@ export interface TransportAiPlay {
   progress?: number;
   title: string;
   onClick: () => void;
+  /** Who plays: AI_PLAYER_CHOICE (the AI) or a player fork's id; the picker shows only with forks. */
+  players?: { id: string; name: string }[];
+  player?: string;
+  onPlayerChange?: (player: string) => void;
 }
 
 interface TransportControlsProps {
@@ -187,7 +193,26 @@ export function TransportControls({
       {!readOnly &&
         aiPlay && (
           // Disabled buttons drop pointer events, so the tooltip lives on a wrapper.
-          <span className="shrink-0 max-sm:order-2" title={aiPlay.title}>
+          <span className="flex shrink-0 items-center gap-1 max-sm:order-2" title={aiPlay.title}>
+            {aiPlay.players !== undefined && aiPlay.players.length > 0 && (
+              <Select
+                value={aiPlay.player ?? AI_PLAYER_CHOICE}
+                disabled={aiPlay.active || aiPlay.busy}
+                onValueChange={(value) => aiPlay.onPlayerChange?.(value)}
+              >
+                <SelectTrigger className="h-8 w-32 text-xs" aria-label="Who plays">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AI_PLAYER_CHOICE}>AI</SelectItem>
+                  {aiPlay.players.map((player) => (
+                    <SelectItem key={player.id} value={player.id}>
+                      {player.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button
               variant="ghost"
               size="sm"

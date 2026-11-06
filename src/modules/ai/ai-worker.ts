@@ -15,10 +15,11 @@ import {
   type PositionStats,
   PREDICTION_FRAMES,
 } from './ai-features';
-import { generateChunks, generationDuration, reconstructFrames, seededGaussian } from './ai-generate';
+import { type AiFrame, generateChunks, generationDuration, reconstructFrames, seededGaussian } from './ai-generate';
+import { gapIdle, idleFrames } from './ai-idle';
 import type { AiMapData } from './ai-map';
 import { AiStreamBuilder } from './ai-stream';
-import type { AiModelKind, FromAiWorker, ToAiWorker } from './ai-worker-protocol';
+import type { AiModelKind, AiPlayerIndex, FromAiWorker, ToAiWorker } from './ai-worker-protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -29,7 +30,7 @@ ort.env.wasm.numThreads = 1;
 interface Model {
   session: ort.InferenceSession;
   stats: PositionStats;
-  seed: number[];
+  seed: number[] | number[][];
   kind: AiModelKind;
 }
 
@@ -53,6 +54,17 @@ async function specialistUrl(base: string, start: Start): Promise<string | null>
   } catch {
     return null; // no specialists folder: the base model plays
   }
+}
+
+/** A player fork's model and starting clip (public/ai/players). */
+async function playerFork(base: string, player: string) {
+  const response = await fetchOk(`${base}/players/index.json`);
+  const entry = ((await response.json()) as AiPlayerIndex).players?.[player];
+  if (entry === undefined) throw new Error(`no exported fork for player ${player}`);
+  return {
+    url: `${base}/players/${encodeURIComponent(entry.file)}?v=${encodeURIComponent(entry.version)}`,
+    clip: entry.clip,
+  };
 }
 
 let start: Start | null = null;
@@ -81,17 +93,22 @@ async function loadModel(base: string, startMessage: Start): Promise<Model> {
     await fetch(`${base}/version.txt`, { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : ''))
   ).trim();
   const v = version === '' ? '' : `?v=${encodeURIComponent(version)}`;
-  const specialist = await specialistUrl(base, startMessage);
+  // A player fork plays the whole map as that player, so no specialist for it.
+  const fork = startMessage.player === undefined ? null : await playerFork(base, startMessage.player);
+  const specialist = fork === null ? await specialistUrl(base, startMessage) : null;
   const [modelBytes, stats, seed] = await Promise.all([
-    fetchOk(specialist ?? `${base}/model.onnx${v}`).then((r) => r.arrayBuffer()),
+    fetchOk(fork?.url ?? specialist ?? `${base}/model.onnx${v}`).then((r) => r.arrayBuffer()),
     fetchOk(`${base}/stats.json${v}`).then((r) => r.json() as Promise<PositionStats>),
-    fetchOk(`${base}/idle_seed.json${v}`).then((r) => r.json() as Promise<number[]>),
+    fork === null
+      ? fetchOk(`${base}/idle_seed.json${v}`).then((r) => r.json() as Promise<number[]>)
+      : Promise.resolve(fork.clip),
   ]);
   const session = await ort.InferenceSession.create(modelBytes, {
     executionProviders: ['wasm'],
     graphOptimizationLevel: 'all',
   });
-  return { session, stats, seed, kind: specialist === null ? 'base' : 'specialist' };
+  const kind: AiModelKind = fork !== null ? 'player' : specialist === null ? 'base' : 'specialist';
+  return { session, stats, seed, kind };
 }
 
 async function runChunk(history: Float32Array, notes: Float32Array, environment: Float32Array) {
@@ -106,6 +123,9 @@ async function runChunk(history: Float32Array, notes: Float32Array, environment:
   if (prediction === undefined) throw new Error('AI model has no output');
   return new Float32Array(prediction.data as Float32Array);
 }
+
+// Idle tail length when the viewer didn't know the song's audio length.
+const IDLE_FALLBACK_S = 8;
 
 const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -149,6 +169,7 @@ async function run() {
   setTimeout(pace, 50);
 
   let index = 0;
+  let last: AiFrame | undefined;
   const chunks = generateChunks(runChunk, {
     notes: map.notes,
     walls: map.walls,
@@ -157,15 +178,26 @@ async function run() {
     height: start.height,
     random: seededGaussian(0),
   });
+  // Long note-free breaks idle instead of drifting; scored notes are outside them.
+  const idleGaps = gapIdle(
+    map.notes.map((note) => note[0]),
+    map.walls.map(([wallStart, duration]): [number, number] => [wallStart, duration]),
+  );
   for await (const chunk of chunks) {
     if (cancelled) return;
-    const frames = reconstructFrames(chunk, model.stats, index);
+    const frames = idleGaps(reconstructFrames(chunk, model.stats, index));
     index += PREDICTION_FRAMES;
     builder.addFrames(frames);
-    const generated = frames[frames.length - 1]?.time ?? 0;
+    last = frames[frames.length - 1] ?? last;
+    const generated = last?.time ?? 0;
     post({ type: 'status', status: 'generating', generatedSeconds: generated, songSeconds });
     // Let the pacer run between model calls.
     await nextTask();
+  }
+  // Motion stops at the last note + 2 s; idle through the rest of the song's audio.
+  if (last !== undefined) {
+    const songEnd = start.songSeconds ?? last.time + IDLE_FALLBACK_S;
+    builder.addFrames(idleFrames(last, songEnd));
   }
   builder.finish();
 }

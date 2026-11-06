@@ -19,7 +19,7 @@ import {
   noteFeatures,
   PREDICTION_FRAMES,
 } from './ai-features';
-import { type AiFrame, anchorDrift, generateChunks } from './ai-generate';
+import { type AiFrame, anchorDrift, generateChunks, type GenerateOptions } from './ai-generate';
 import { aiMapData } from './ai-map';
 import { AiStreamBuilder } from './ai-stream';
 import { item } from './ai-util';
@@ -36,6 +36,7 @@ interface Golden {
   stats: { mean: number[]; std: number[] };
   features: { time: number; notes: number[]; density: number; environment: number[] }[];
   generation: { chunks: number[][] };
+  clipGeneration: { clip: number[][]; height: number; chunks: number[][] };
   anchor: { home: [number, number]; input: number[]; expected: number[] };
   sim: {
     njs: number;
@@ -107,11 +108,11 @@ describe('built-in AI matches the Python reference', () => {
     }
   });
 
-  test('generation through model.onnx (noise off)', async () => {
+  async function modelRunner() {
     const model = readFileSync(new URL('../../../public/ai/model.onnx', import.meta.url));
     ort.env.wasm.numThreads = 1;
     const session = await ort.InferenceSession.create(model);
-    const run = async (history: Float32Array, noteInput: Float32Array, environment: Float32Array) => {
+    return async (history: Float32Array, noteInput: Float32Array, environment: Float32Array) => {
       const output = await session.run({
         history: new ort.Tensor('float32', history, [1, HISTORY_FRAMES, MODEL_INPUT_FEATURES]),
         notes: new ort.Tensor('float32', noteInput, [1, NOTE_SLOTS, NOTE_FEATURES]),
@@ -121,18 +122,32 @@ describe('built-in AI matches the Python reference', () => {
       if (prediction === undefined) throw new Error('model has no prediction output');
       return new Float32Array(prediction.data as Float32Array);
     };
+  }
+
+  async function firstChunks(options: Omit<GenerateOptions, 'notes' | 'walls' | 'stats' | 'random'>, count: number) {
     const chunks: Float32Array[] = [];
-    for await (const chunk of generateChunks(run, {
+    for await (const chunk of generateChunks(await modelRunner(), {
       notes,
       walls,
-      seed: golden.seed,
       stats: golden.stats,
       random: null,
+      ...options,
     })) {
       chunks.push(chunk);
-      if (chunks.length === golden.generation.chunks.length) break;
+      if (chunks.length === count) break;
     }
+    return chunks;
+  }
+
+  test('generation through model.onnx (noise off)', async () => {
+    const chunks = await firstChunks({ seed: golden.seed }, golden.generation.chunks.length);
     golden.generation.chunks.forEach((expected, i) => expectClose(item(chunks, i), expected, 2e-3));
+  }, 60_000);
+
+  test('generation from a starting clip (player fork start)', async () => {
+    const { clip, height, chunks: expected } = golden.clipGeneration;
+    const chunks = await firstChunks({ seed: clip, height }, expected.length);
+    expected.forEach((chunk, i) => expectClose(item(chunks, i), chunk, 2e-3));
   }, 60_000);
 
   test('drift anchor', () => {

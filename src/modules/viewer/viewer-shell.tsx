@@ -46,7 +46,7 @@ import { ViewerActions } from './components/viewer-actions';
 import { ViewerOverlay } from './components/viewer-overlay';
 import { buildTimelineMarkers } from './timeline-markers';
 import { TransportControls } from './transport/transport-controls';
-import { useAiModelAvailability, useAiPreview, type AiPlayTarget } from './use-ai-play';
+import { AI_PLAYER_CHOICE, useAiModelAvailability, useAiPlayers, useAiPreview, type AiPlayTarget } from './use-ai-play';
 import { useSongTransport } from './use-song-transport';
 import { useViewerControls } from './use-viewer-controls';
 import { useViewerSession } from './use-viewer-session';
@@ -596,6 +596,10 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
   // other replay is loaded. The built-in AI then plays the map in the browser,
   // right here in the map preview (useAiPreview).
   const aiModel = useAiModelAvailability();
+  // Exported player forks (public/ai/players): AI Play can play the map as one of them.
+  const aiPlayers = useAiPlayers();
+  const [aiPlayerChoice, setAiPlayerChoice] = useState(AI_PLAYER_CHOICE);
+  const aiPlayer = aiPlayers.find((player) => player.id === aiPlayerChoice);
   const aiPreview = useAiPreview({
     sources,
     session,
@@ -804,7 +808,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
         <div
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute inset-0 z-[25] bg-black transition-opacity duration-[1400ms] ease-in-out',
+            'pointer-events-none absolute inset-0 z-25 bg-black transition-opacity duration-1400 ease-in-out',
             mapPoolShowcase.visualFaded ? 'opacity-100' : 'opacity-0',
           )}
         />
@@ -830,7 +834,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
         !(live.status === 'watching' && transport.playing && sources.mapMeta !== null && transport.duration > 0) && (
           <ViewerOverlay
             backdropBlur={false}
-            className="!bg-black"
+            className="bg-black!"
             icon={live.status === 'error' ? AlertCircle : LoaderCircle}
             iconClassName={live.status === 'error' || live.status === 'paused' ? '' : 'animate-spin'}
             label={
@@ -885,7 +889,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
       {!hideUI && playbackOverlay !== null && (
         <ViewerOverlay
           {...playbackOverlay}
-          className={'onAction' in playbackOverlay ? '!bottom-16 max-sm:!bottom-24' : undefined}
+          className={'onAction' in playbackOverlay ? 'bottom-16! max-sm:bottom-24!' : undefined}
         />
       )}
 
@@ -950,7 +954,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
           className={cn(
             'fixed left-3 top-3 z-30 flex max-h-[calc(100dvh-1.5rem)] flex-col items-start gap-2 transition duration-200 max-sm:left-2 max-sm:top-2 max-sm:max-h-[calc(100dvh-1rem)]',
             remoteActive &&
-              'h-[calc(100dvh-1.5rem)] max-sm:!left-0 max-sm:!top-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:gap-0',
+              'h-[calc(100dvh-1.5rem)] max-sm:left-0! max-sm:top-0! max-sm:h-dvh max-sm:max-h-dvh max-sm:gap-0',
             !chromeVisible &&
               (!showMapCard || !settings.keepMapInfoVisible) &&
               'pointer-events-none -translate-y-2 opacity-0',
@@ -1117,6 +1121,8 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
                     progress: aiPreview.progress < 100 ? aiPreview.progress : undefined,
                     title: 'Stop the AI and show the map without its play',
                     onClick: aiPreview.stop,
+                    players: aiPlayers,
+                    player: aiPlayer?.id,
                   }
                 : {
                     active: false,
@@ -1130,10 +1136,13 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
                           ? 'No AI model installed (public/ai)'
                           : aiPlayTarget === null
                             ? 'Load a map to let the AI play it'
-                            : `Let the AI play ${aiPlayTarget.characteristic} ${aiPlayTarget.difficulty} (starts once a few seconds are generated)`,
+                            : `Let ${aiPlayer === undefined ? 'the AI' : `${aiPlayer.name}'s fork`} play ${aiPlayTarget.characteristic} ${aiPlayTarget.difficulty} (starts once a few seconds are generated)`,
                     onClick() {
-                      if (aiPlayTarget !== null) void aiPreview.start(aiPlayTarget);
+                      if (aiPlayTarget !== null) void aiPreview.start(aiPlayTarget, aiPlayer);
                     },
+                    players: aiPlayers,
+                    player: aiPlayer?.id,
+                    onPlayerChange: setAiPlayerChoice,
                   }
             }
             onTogglePlay={() => {

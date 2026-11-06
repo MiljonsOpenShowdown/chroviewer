@@ -45,7 +45,9 @@ export interface AiFrame {
 export interface GenerateOptions {
   notes: AiNote[];
   walls: AiWall[];
-  seed: number[];
+  /** One 28-value pose (held for the whole warm-up history) or a recorded clip
+   * (frames x 28, a player fork's starting clip) whose last 30 frames are used as they are. */
+  seed: number[] | number[][];
   stats: PositionStats;
   height?: number;
   /** Gaussian source for history noise; null turns the noise off (tests). */
@@ -98,15 +100,35 @@ export function anchorDrift(chunk: Float32Array, home: [number, number], stats: 
   return chunk;
 }
 
+/**
+ * Warm-up history (normalized 30x28) and drift home (raw head x, z of the last
+ * pose). Port of initial_history / drift_home in inference.py: a clip keeps its
+ * captured height; later histories use the requested height.
+ */
+function seedHistory(seed: number[] | number[][], stats: PositionStats) {
+  const clip = typeof seed[0] === 'number' ? null : (seed as number[][]);
+  if (clip !== null && clip.length < HISTORY_FRAMES) {
+    throw new Error(`starting clip has ${String(clip.length)} frames, needs ${String(HISTORY_FRAMES)}`);
+  }
+  const frames = clip === null ? null : clip.slice(-HISTORY_FRAMES);
+  const pose = (frame: number) =>
+    (frames === null ? (seed as number[]) : item(frames, frame)).slice(0, MODEL_INPUT_FEATURES);
+  const history = new Float32Array(HISTORY_FRAMES * MODEL_INPUT_FEATURES);
+  for (let frame = 0; frame < HISTORY_FRAMES; frame++) {
+    history.set(normalizePositions(pose(frame), stats), frame * MODEL_INPUT_FEATURES);
+  }
+  const last = pose(HISTORY_FRAMES - 1);
+  const home: [number, number] = [item(last, 0), item(last, 2)];
+  return { history, home };
+}
+
 /** Yields each predicted chunk (still normalized) in song order. */
 export async function* generateChunks(runChunk: RunChunk, options: GenerateOptions) {
   const { notes, walls, stats } = options;
   const height = options.height ?? DEFAULT_PLAYER_HEIGHT;
   const random = options.random === undefined ? seededGaussian(0) : options.random;
-  const seed = normalizePositions(options.seed, stats);
-  const home: [number, number] = [item(options.seed, 0), item(options.seed, 2)];
-  let history = new Float32Array(HISTORY_FRAMES * MODEL_INPUT_FEATURES);
-  for (let frame = 0; frame < HISTORY_FRAMES; frame++) history.set(seed, frame * MODEL_INPUT_FEATURES);
+  const { history: warmUp, home } = seedHistory(options.seed, stats);
+  let history = warmUp;
 
   const duration = generationDuration(notes);
   for (let time = START_TIME; time < duration; time += PREDICTION_FRAMES / TARGET_FPS) {

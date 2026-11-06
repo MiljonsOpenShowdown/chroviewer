@@ -4,8 +4,15 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { effectiveNoteJumpSpeed } from '../../core/beatmap/info';
 import type { Replay } from '../../core/replay/types';
+import { DEFAULT_PLAYER_HEIGHT } from '../ai/ai-generate';
 import { AI_DIFFICULTY_RANKS, aiMapData } from '../ai/ai-map';
-import { AI_MODEL_BASE, AI_PLAYER_ID, type FromAiWorker, type ToAiWorker } from '../ai/ai-worker-protocol';
+import {
+  AI_MODEL_BASE,
+  AI_PLAYER_ID,
+  type AiPlayerIndex,
+  type FromAiWorker,
+  type ToAiWorker,
+} from '../ai/ai-worker-protocol';
 import { ReplayStreamPacketSchema } from '../live/generated/proto/scoresaber/live/v1/replay_stream_pb';
 import { createLiveReplay } from '../live/live-replay';
 import { appendChunk, applyEnd } from '../live/ta-replay-file';
@@ -34,6 +41,41 @@ export function useAiModelAvailability() {
     };
   }, []);
   return availability;
+}
+
+/** Player-picker value for the AI itself (Radix Select items can't use ''). */
+export const AI_PLAYER_CHOICE = 'ai';
+
+/** A player fork exported to public/ai/players: it plays the map as that player. */
+export interface AiPlayerOption {
+  id: string;
+  name: string;
+  height: number;
+}
+
+/** The exported player forks (public/ai/players/index.json); empty when there are none. */
+export function useAiPlayers() {
+  const [players, setPlayers] = useState<AiPlayerOption[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${AI_MODEL_BASE}/players/index.json`, { cache: 'no-cache', signal: controller.signal })
+      .then((response) => (response.ok ? (response.json() as Promise<AiPlayerIndex>) : null))
+      .then((index) => {
+        const entries = Object.entries(index?.players ?? {});
+        setPlayers(
+          entries
+            .flatMap(([id, entry]) => (entry === undefined ? [] : [{ id, name: entry.name, height: entry.height }]))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      })
+      .catch(() => {
+        // no players folder: only the AI plays
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+  return players;
 }
 
 type Sources = ReturnType<typeof useViewerSources>;
@@ -140,7 +182,8 @@ export function useAiPreview(options: {
     });
   }
 
-  async function start(target: AiPlayTarget) {
+  /** player: one of useAiPlayers' forks plays instead of the AI, from its own starting clip and at its height. */
+  async function start(target: AiPlayTarget, player?: AiPlayerOption) {
     const { sources, session, transport } = optionsRef.current;
     const row = sources.rows.find((candidate) => candidate.key === session.selectedKey);
     if (runRef.current !== null || row?.difficulty === undefined || row.infoDifficulty === undefined) return;
@@ -191,7 +234,9 @@ export function useAiPreview(options: {
       difficultyRank: AI_DIFFICULTY_RANKS[target.difficulty] ?? 9,
       characteristic: target.characteristic,
       modelBase: AI_MODEL_BASE,
-      height: 1.65,
+      ...(player !== undefined && { player: player.id }),
+      height: player?.height ?? DEFAULT_PLAYER_HEIGHT,
+      ...(transport.duration > 0 && { songSeconds: transport.duration }),
     };
     worker.postMessage(startMessage);
     worker.postMessage({ type: 'map', data } satisfies ToAiWorker);

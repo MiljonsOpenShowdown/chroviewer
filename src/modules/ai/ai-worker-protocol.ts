@@ -15,15 +15,28 @@ export type ToAiWorker =
       difficultyRank: number;
       characteristic: string;
       modelBase: string;
+      /** A player fork (public/ai/players/index.json key) plays instead of the AI. */
+      player?: string;
       height: number;
+      /** Song audio length; the AI idles from its last note + 2 s until then. */
+      songSeconds?: number;
     }
   | { type: 'map'; data: AiMapData }
   | { type: 'stop' };
 
 export type AiWorkerStatus = 'loading' | 'waiting-map' | 'generating' | 'done';
 
-/** base = model.onnx; specialist = the map's own model from public/ai/specialists. */
-export type AiModelKind = 'base' | 'specialist';
+/** base = model.onnx; specialist = the map's own model from public/ai/specialists;
+ * player = a player fork from public/ai/players. */
+export type AiModelKind = 'base' | 'specialist' | 'player';
+
+/** public/ai/players/index.json, written by replay_ai/export_onnx.py. */
+export interface AiPlayerIndex {
+  players?: Record<
+    string,
+    { file: string; version: string; name: string; height: number; clip: number[][] } | undefined
+  >;
+}
 
 export type FromAiWorker =
   | { type: 'packet'; bytes: ArrayBuffer }
