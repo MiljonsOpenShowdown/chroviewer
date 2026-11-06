@@ -1,0 +1,15 @@
+services:
+  chroviewer:
+    container_name: chroviewer
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_TA_LIVE_SOCKET_URL=${VITE_TA_LIVE_SOCKET_URL:-wss://server.tournamentassistant.net:8676}
+        - VITE_BEATSAVER_API_URL=${VITE_BEATSAVER_API_URL:-https://api.beatsaver.com}
+        - VITE_SCORESABER_API_URL=${VITE_SCORESABER_API_URL:-https://scoresaber.com}
+        - VITE_LUDUS_URL=${VITE_LUDUS_URL:-https://ludus-1.scoresaber.com}
+    ports:
+      - "4000:4000"
+    mem_limit: 1G
+    restart: unless-stopped
