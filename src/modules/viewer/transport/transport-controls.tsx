@@ -166,7 +166,7 @@ export function TransportControls({
       data-transport-controls
       className={cn(
         'fixed bottom-3 left-1/2 z-30 flex w-[min(52rem,calc(100vw-1.5rem))] -translate-x-1/2 items-center gap-2 bg-card/88 px-1.5 py-0 backdrop-blur-xl transition duration-200 max-sm:bottom-2 max-sm:grid max-sm:w-[calc(100vw-1rem)] max-sm:grid-cols-[auto_minmax(0,1fr)_auto] max-sm:gap-1.5 max-sm:p-2',
-        readOnly && '!right-3 !left-[calc(var(--live-sidebar-width)+1.5rem)] !w-auto !translate-x-0 max-sm:!hidden',
+        readOnly && 'right-3! left-[calc(var(--live-sidebar-width)+1.5rem)]! w-auto! translate-x-0! max-sm:hidden!',
         !visible && 'pointer-events-none translate-y-2 opacity-0',
       )}
     >
@@ -204,7 +204,7 @@ export function TransportControls({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={AI_PLAYER_CHOICE}>AI</SelectItem>
+                  <SelectItem value={AI_PLAYER_CHOICE}>MOSes</SelectItem>
                   {aiPlay.players.map((player) => (
                     <SelectItem key={player.id} value={player.id}>
                       {player.name}
