@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vite-plus/test';
 
 import { parseDifficulty } from '../../core/beatmap/parse';
 import { ReplayStreamPacketSchema } from '../live/generated/proto/scoresaber/live/v1/replay_stream_pb';
-import { resampleFrames, simulateNotes } from './ai-cut-sim';
+import { resampleFrames, simulateNotes, SWORD_OFFSET } from './ai-cut-sim';
 import {
   type AiNote,
   type AiWall,
@@ -28,10 +28,18 @@ import { item } from './ai-util';
 // `python -m replay_ai.export_golden`), using the same public/ai/model.onnx.
 
 interface Golden {
-  map: { hash: string; difficulty: string; characteristic: string; songBpm: number; njs: number; dat: string };
+  map: {
+    hash: string;
+    difficulty: string;
+    characteristic: string;
+    songBpm: number;
+    njs: number;
+    noteStartBeatOffset: number;
+    dat: string;
+  };
   expectedNotes: number[][];
   expectedWalls: number[][];
-  expectedSimNotes: [number, number][];
+  expectedSimNotes: [number, number, number][];
   seed: number[];
   stats: { mean: number[]; std: number[] };
   features: { time: number; notes: number[]; density: number; environment: number[] }[];
@@ -40,8 +48,9 @@ interface Golden {
   anchor: { home: [number, number]; input: number[]; expected: number[] };
   sim: {
     njs: number;
+    halfJumpDuration: number;
     frames: number[][];
-    notes: [number, number][];
+    notes: [number, number, number][];
     results: {
       noteId: number;
       eventType: number;
@@ -86,6 +95,7 @@ describe('built-in AI matches the Python reference', () => {
       difficulty: golden.map.difficulty,
       characteristic: golden.map.characteristic,
       njs: golden.map.njs,
+      noteStartBeatOffset: golden.map.noteStartBeatOffset,
     });
     expect(data.notes.length).toBe(notes.length);
     expectClose(data.notes.flat(), notes.flat(), 1e-5);
@@ -96,6 +106,11 @@ describe('built-in AI matches the Python reference', () => {
       data.simNotes.map((n) => n.time),
       golden.expectedSimNotes.map(([, time]) => time),
       1e-5,
+    );
+    expectClose(
+      data.simNotes.map((n) => n.angleOffset ?? 0),
+      golden.expectedSimNotes.map(([, , angleOffset]) => angleOffset),
+      1e-4,
     );
   });
 
@@ -159,8 +174,10 @@ describe('built-in AI matches the Python reference', () => {
     const frames = resampleFrames(golden.sim.frames.map(toFrame));
     const results = simulateNotes(
       frames,
-      golden.sim.notes.map(([noteId, time]) => ({ noteId, time })),
+      golden.sim.notes.map(([noteId, time, angleOffset]) => ({ noteId, time, angleOffset })),
       golden.sim.njs,
+      SWORD_OFFSET,
+      golden.sim.halfJumpDuration,
     );
     expect(results.length).toBe(golden.sim.results.length);
     results.forEach((result, i) => {
@@ -184,8 +201,9 @@ describe('built-in AI matches the Python reference', () => {
       mapHash: golden.map.hash,
       difficultyRank: 7,
       characteristic: 'Standard',
-      simNotes: golden.sim.notes.map(([noteId, time]) => ({ noteId, time })),
+      simNotes: golden.sim.notes.map(([noteId, time, angleOffset]) => ({ noteId, time, angleOffset })),
       njs: golden.sim.njs,
+      halfJumpDuration: golden.sim.halfJumpDuration,
       height: 1.65,
     });
     const frames = golden.sim.frames.map(toFrame);

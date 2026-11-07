@@ -194,6 +194,7 @@ export function useAiPreview(options: {
       hash,
       ...target,
       njs: effectiveNoteJumpSpeed(row.infoDifficulty),
+      noteStartBeatOffset: row.infoDifficulty.noteStartBeatOffset,
     });
     const worker = new Worker(new URL('../ai/ai-worker.ts', import.meta.url), { type: 'module' });
     const run: AiPreviewRun = {
