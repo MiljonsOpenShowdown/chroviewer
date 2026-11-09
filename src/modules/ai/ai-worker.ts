@@ -140,6 +140,7 @@ async function run() {
     characteristic: start.characteristic,
     simNotes: map.simNotes,
     njs: map.njs,
+    halfJumpDuration: map.halfJumpDuration,
     height: start.height,
   });
   const songSeconds = generationDuration(map.notes);
@@ -223,6 +224,7 @@ self.onmessage = (event: MessageEvent<ToAiWorker>) => {
       characteristic: message.characteristic,
       simNotes: [],
       njs: 0,
+      halfJumpDuration: null,
       height: message.height,
     }).startPacket(),
   );

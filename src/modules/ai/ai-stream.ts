@@ -82,6 +82,8 @@ export interface AiStreamOptions {
   characteristic: string;
   simNotes: SimNote[];
   njs: number;
+  /** map half jump (s), for the note turn and collider lifetime; null = unknown */
+  halfJumpDuration: number | null;
   height: number;
 }
 
@@ -212,7 +214,7 @@ export class AiStreamBuilder {
     this.nextNote = end;
     const windowStart = item(batch, 0).time - CUT_WINDOW_S - SWING_WINDOW_S - 0.2;
     const window = this.frames.filter((frame) => frame.time >= windowStart);
-    const results = simulateNotes(resampleFrames(window), batch, this.options.njs, SWORD_OFFSET);
+    const results = simulateNotes(resampleFrames(window), batch, this.options.njs, SWORD_OFFSET, this.options.halfJumpDuration);
     // Untouched bombs are not events in real replays.
     this.pending.push(...results.filter((result) => result.eventType !== 4));
   }

@@ -15,9 +15,10 @@
 
 Outside of utilizing the Replay-streaming components from Luna's ChroViewer, we've additionally added multiple "Clean" environments, changed sabers etc.
 
-"MOSViewer" also contains a version of ChroViewer, completely stripped down to what's needed.
+"MOSViewer" also contains a version of ChroViewer, completely stripped down to what's needed for tournaments: *Just* the gameplay, none of the clutter.
 
 To use that version, use the `/overlay`-path. It accepts the same parameters as the default path.
+Due to this being a "stripped" variant of the viewer, no UI exists.
 
 ## Getting Started
 
