@@ -114,8 +114,11 @@ export function applyLiveReplayEnd(runtime: LiveRuntime, packet: ReplayStreamPac
     runtime.replay.combos.push({ combo: end.score.combo, time: runtime.latestSongTime });
   }
   runtime.streamEnding = true;
-  const waiting = end.completion === ReplayCompletion.QUIT || end.completion === ReplayCompletion.ABORTED;
+  // Only a quit stops at once. TA ends every play ABORTED, even a passed one, so
+  // an aborted play still shows the data already received before it stops.
+  const waiting = end.completion === ReplayCompletion.QUIT;
   runtime.streamQuit = waiting;
+  runtime.streamAborted = end.completion === ReplayCompletion.ABORTED;
   runtime.playbackAttemptPending = !waiting;
   return waiting ? 'waiting' : 'ending';
 }

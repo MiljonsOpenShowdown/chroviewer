@@ -6,12 +6,15 @@ import { sampleReplayFrames } from '../../core/replay/sampling';
 import type { Replay, ReplayPose } from '../../core/replay/types';
 import {
   ReplayChunkSchema,
+  ReplayCompletion,
   ReplayPauseEventSchema,
+  ReplayStreamEndSchema,
+  ReplayStreamPacketSchema,
   ReplayStreamStartSchema,
 } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
 import { scheduleReplayPause, tickLivePlayback } from './live-playback';
 import { createLiveReplay } from './live-replay';
-import { applyLiveReplayChunk } from './live-replay-stream';
+import { applyLiveReplayChunk, applyLiveReplayEnd } from './live-replay-stream';
 import { createLiveRuntime, pruneLiveReplay, resetLiveStream } from './live-runtime';
 
 vi.mock('lzma-web/dist/lzma.js', () => ({ LZMA: () => ({ decompress: vi.fn() }) }));
@@ -340,6 +343,92 @@ describe('controlled TA tile', () => {
     clock.play();
     tickLivePlayback(runtime, clock, 'Standard:9', actions);
     expect(runtime.streamPaused).toBe(false);
+    expect(actions.pause).not.toHaveBeenCalled();
+    expect(clock.isPlaying()).toBe(true);
+  });
+});
+
+describe('ended TA play', () => {
+  function endedPlay(completion: ReplayCompletion) {
+    const play = fixture();
+    const { runtime, clock, actions, advance, appendChunk } = play;
+    runtime.mapLoaded = true;
+    runtime.playbackAttemptPending = true;
+    appendChunk(0, 20, 90);
+    const tick = (seconds: number) => {
+      for (let elapsed = 0; elapsed < seconds; elapsed += 0.1) {
+        advance(0.1);
+        tickLivePlayback(runtime, clock, 'Standard:9', actions);
+      }
+    };
+    tick(3);
+    expect(clock.isPlaying()).toBe(true);
+    const end = create(ReplayStreamPacketSchema, {
+      body: {
+        case: 'end',
+        value: create(ReplayStreamEndSchema, { cursor: { songTimeMs: 20_000n }, completion }),
+      },
+    });
+    return { ...play, tick, end: () => applyLiveReplayEnd(runtime, end) };
+  }
+
+  test('an aborted end plays out the received data, then waits', () => {
+    const { runtime, clock, actions, tick, end } = endedPlay(ReplayCompletion.ABORTED);
+    expect(end()).toBe('ending');
+    tick(10);
+    expect(clock.isPlaying()).toBe(true);
+    expect(clock.currentTime()).toBeGreaterThan(12);
+    expect(actions.pause).not.toHaveBeenCalled();
+    tick(10);
+    expect(clock.isPlaying()).toBe(false);
+    expect(clock.currentTime()).toBeGreaterThan(19.9);
+    expect(clock.currentTime()).toBeLessThan(20.2);
+    expect(actions.updateStatus).toHaveBeenLastCalledWith('waiting');
+    // It stays stopped
+    tick(2);
+    expect(clock.isPlaying()).toBe(false);
+    expect(runtime.streamQuit).toBe(false);
+  });
+
+  test('a quit end stops at once', () => {
+    const { clock, actions, tick, end } = endedPlay(ReplayCompletion.QUIT);
+    const reached = clock.currentTime();
+    expect(end()).toBe('waiting');
+    tick(0.2);
+    expect(clock.isPlaying()).toBe(false);
+    expect(clock.currentTime()).toBeLessThan(reached + 0.3);
+    expect(actions.updateStatus).toHaveBeenLastCalledWith('waiting');
+  });
+
+  test('a passed end keeps playing past the received data', () => {
+    const { clock, tick, end } = endedPlay(ReplayCompletion.PASSED);
+    expect(end()).toBe('ending');
+    tick(25);
+    expect(clock.isPlaying()).toBe(true);
+    expect(clock.currentTime()).toBeGreaterThan(20.5);
+  });
+
+  test("an aborted controlled tile never pauses the parent's clock", () => {
+    const { runtime, clock, actions, advance, appendChunk } = fixture();
+    runtime.controlled = true;
+    runtime.mapLoaded = true;
+    appendChunk(0, 20, 90);
+    clock.seek(5);
+    clock.play();
+    applyLiveReplayEnd(
+      runtime,
+      create(ReplayStreamPacketSchema, {
+        body: {
+          case: 'end',
+          value: create(ReplayStreamEndSchema, {
+            cursor: { songTimeMs: 20_000n },
+            completion: ReplayCompletion.ABORTED,
+          }),
+        },
+      }),
+    );
+    advance(1);
+    tickLivePlayback(runtime, clock, 'Standard:9', actions);
     expect(actions.pause).not.toHaveBeenCalled();
     expect(clock.isPlaying()).toBe(true);
   });

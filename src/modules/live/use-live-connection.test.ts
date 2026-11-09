@@ -162,12 +162,12 @@ async function connectPlayer(id: string, barrier: MultiviewStartBarrier) {
         }),
       });
     },
-    end(time: number) {
+    end(time: number, completion = ReplayCompletion.PASSED) {
       receive({
         case: 'end',
         value: create(ReplayStreamEndSchema, {
           cursor: { sequence: ++sequence, songTimeMs: BigInt(time * 1000) },
-          completion: ReplayCompletion.PASSED,
+          completion,
         }),
       });
     },
@@ -270,5 +270,57 @@ describe('stream timeline', () => {
     // The ended play is no longer starved
     expect(stall).toBeLessThan(end);
     expect(stallEnd).toBeGreaterThan(end);
+  });
+});
+
+describe('stream end completion', () => {
+  async function playingTile(seconds: number) {
+    const player = await connectPlayer('0', compositor(1, false));
+    player.chunk(0, seconds);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(player.clock.isPlaying()).toBe(true);
+    return player;
+  }
+
+  test('an aborted end plays out the received data, then waits', async () => {
+    const player = await playingTile(30);
+    const reached = player.clock.currentTime();
+    expect(reached).toBeLessThan(10);
+    // The end arrives while most of the play is still ahead of the clock
+    player.end(30, ReplayCompletion.ABORTED);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(player.clock.isPlaying()).toBe(true);
+    expect(player.clock.currentTime()).toBeGreaterThan(reached + 4);
+    expect(player.status).toBe('watching');
+    expect(player.events.filter((event) => event.type === 'pause')).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(player.clock.isPlaying()).toBe(false);
+    expect(player.clock.currentTime()).toBeGreaterThan(29.9);
+    expect(player.clock.currentTime()).toBeLessThan(30.2);
+    expect(player.status).toBe('waiting');
+    expect(player.events).toContainEqual({
+      type: 'stream-end',
+      streamId: 'stream:0',
+      completion: 'aborted',
+      songTime: 30,
+    });
+    expect(player.events.filter((event) => event.type === 'pause')).toHaveLength(1);
+  });
+
+  test('a quit end stops at once', async () => {
+    const player = await playingTile(30);
+    const reached = player.clock.currentTime();
+    player.end(30, ReplayCompletion.QUIT);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(player.clock.isPlaying()).toBe(false);
+    expect(player.clock.currentTime()).toBeLessThan(reached + 0.5);
+    expect(player.status).toBe('waiting');
+    expect(player.events).toContainEqual({
+      type: 'stream-end',
+      streamId: 'stream:0',
+      completion: 'quit',
+      songTime: 30,
+    });
   });
 });

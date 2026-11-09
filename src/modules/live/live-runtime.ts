@@ -61,8 +61,10 @@ export interface LiveRuntime {
   sessionPlayerId: string;
   socket: WebSocket | null;
   streamEnding: boolean;
-  /** The play was quit or aborted: playback stops at the end of the received data. */
+  /** The play was quit (players returned to the menu): playback stops at once. */
   streamQuit: boolean;
+  /** The play ended ABORTED (TA ends every play so): playback stops at the end of the received data. */
+  streamAborted: boolean;
   /** Caught-up history was applied: playback starts near the live edge, not at the first frame. */
   taCatchupStart: boolean;
   streamPaused: boolean;
@@ -116,6 +118,7 @@ export function createLiveRuntime(target: LiveTarget): LiveRuntime {
     socket: null,
     streamEnding: false,
     streamQuit: false,
+    streamAborted: false,
     taCatchupStart: false,
     streamPaused: false,
     taLive: target.source === 'ta' || target.source === 'cocu',
@@ -159,6 +162,7 @@ export function resetLiveStream(runtime: LiveRuntime) {
   runtime.replay = null;
   runtime.streamEnding = false;
   runtime.streamQuit = false;
+  runtime.streamAborted = false;
   runtime.taCatchupStart = false;
   runtime.streamPaused = false;
   runtime.taLiveMapHash = '';

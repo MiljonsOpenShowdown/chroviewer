@@ -102,10 +102,18 @@ function tickTournamentAssistantPlayback(
     actions.updateStatus('waiting');
     return;
   }
-  // A quit or aborted play (e.g. the coordinator returned players to the menu)
-  // is over: stop at once, rather than playing out the buffered gameplay or
-  // running on to the song's end like a finished play's late packets.
+  // A quit play (e.g. the coordinator returned players to the menu) is over:
+  // stop at once, rather than playing out the buffered gameplay or running on
+  // to the song's end like a finished play's late packets.
   if (runtime.streamQuit) {
+    runtime.taSyncHolding = false;
+    if (clock.isPlaying()) actions.pause();
+    actions.updateStatus('waiting');
+    return;
+  }
+  // An aborted play plays out the data already received, then stops. It does
+  // not run on to the song's end like a passed play.
+  if (runtime.streamAborted && currentTime >= Math.max(runtime.latestSongTime, runtime.latestFrameTime) - 0.02) {
     runtime.taSyncHolding = false;
     if (clock.isPlaying()) actions.pause();
     actions.updateStatus('waiting');
