@@ -150,8 +150,9 @@ PLAYBACK AND SOURCES
 autoplay=true|false           Attempt playback without waiting for the play button.
 map=<BeatSaver key or URL>    Load a map preview.
 replayUrl=<HTTPS URL>         Load a replay file: BeatLeader .bsor, ScoreSaber, or a recorded
-                              TournamentAssistant stream ("TAReplayStream v1" header, then
-                              each websocket frame as [uint32 LE length][ReplayStreamPacket]).
+                              TournamentAssistant stream ("TAReplayStream v1" or "v2" header,
+                              then each websocket frame as [uint32 LE length][ReplayStreamPacket];
+                              v2 stores the pose frames quantized and delta-coded, to be smaller).
 scoreId=<ScoreSaber score>    Load a ScoreSaber replay.
 beat=<number>                 Initial beat for non-live playback.
 difficulty=<zero-based index> Difficulty index for a map preview.
