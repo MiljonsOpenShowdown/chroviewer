@@ -106,7 +106,7 @@ const MODEL_TRAILS: Record<CustomSaberModelId, CustomSaberTrailDefinition> = {
 };
 
 // The MOS ThinSabers' white "Metallic" handle reads as flat gray under the
-// replay lights, and their big "M" plate (Cube.001) washes out to white under
+// replay lights, and their big "M" plate (MOS_Logo_(1), Tourney only) washes out to white under
 // the default saber glow.
 const MOS_HANDLE_COLOR: Rgb = [0.07, 0.07, 0.08];
 const MOS_LOGO_BRIGHTNESS = 0.8;
@@ -181,8 +181,7 @@ async function loadTemplate(model: CustomSaberModelId): Promise<CustomSaberTempl
           color: mosHandle ? MOS_HANDLE_COLOR : materialColor(source),
           colorIndex: colorIndex(role, side),
           role,
-          // GLTFLoader strips the "." from Cube.001
-          mosLogo: isMosModel(model) && object.name.includes('__Cube001__'),
+          mosLogo: isMosModel(model) && object.name.includes('__MOS_Logo_(1)__'),
         });
       });
       for (const material of sourceMaterials) material.dispose();
