@@ -20,7 +20,7 @@ export const OVERLAY_SETTINGS: Record<string, string | number | boolean> = {
   // Saber trails 60% shorter than the viewer's 18 replay frames
   replayTrailSamples: 7,
   hsv: 'mos',
-  saberModel: 'default',
+  saberModel: 'mos-cc',
   // The map's own stage, not the one the player picked in-game
   useMapEnvironment: true,
   preferReplayColors: true,
