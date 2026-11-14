@@ -3,6 +3,7 @@ import { create, fromBinary } from '@bufbuild/protobuf';
 import type { Replay } from '../../core/replay/types';
 import {
   ReplayCompletion,
+  ReplayPlatform,
   ReplayPoseFrameSchema,
   ReplayStreamPacketSchema,
   type ReplayStreamPacket,
@@ -172,6 +173,20 @@ export function readTaReplayFilePackets(data: Uint8Array): ReplayStreamPacket[] 
   return packets;
 }
 
+// MOSes on BeatLeader: the profile shown for the plays of MOS' AI, which are
+// recorded as platform DEV under a made-up player ID.
+const aiBeatLeaderPlayerId = '360351';
+
+// Whose play the file holds. The stream carries the player's platform ID but no
+// name, so the ID stands in until the player card has loaded the profile.
+function filePlayer(start: ReplayStreamStart): Replay['metadata']['player'] {
+  if (start.player?.platform === ReplayPlatform.DEV) {
+    return { id: aiBeatLeaderPlayerId, name: 'MOSes', profile: 'beatleader' };
+  }
+  const id = start.player?.playerId ?? '';
+  return id === '' ? undefined : { id, name: id };
+}
+
 export function parseTaReplayFile(data: Uint8Array): Replay {
   let start: ReplayStreamStart | undefined;
   let streamId = '';
@@ -196,6 +211,7 @@ export function parseTaReplayFile(data: Uint8Array): Replay {
   // Frames are recorded in arrival order; the cursor restores send order.
   chunks.sort((left, right) => Number((left.cursor?.sequence ?? 0n) - (right.cursor?.sequence ?? 0n)));
   const replay = createLiveReplay(start, true);
+  replay.metadata.player = filePlayer(start);
   for (const chunk of chunks) appendChunk(replay, chunk);
   if (end !== undefined) applyEnd(replay, end, replay.poses.at(-1)?.time ?? 0);
   return replay;

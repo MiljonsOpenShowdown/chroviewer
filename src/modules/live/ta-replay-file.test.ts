@@ -1,7 +1,11 @@
 import { create, toBinary } from '@bufbuild/protobuf';
 import { describe, expect, test, vi } from 'vite-plus/test';
 
-import { ReplayCompletion, ReplayStreamPacketSchema } from './generated/proto/scoresaber/live/v1/replay_stream_pb';
+import {
+  ReplayCompletion,
+  ReplayPlatform,
+  ReplayStreamPacketSchema,
+} from './generated/proto/scoresaber/live/v1/replay_stream_pb';
 import { isTaReplayFile, parseTaReplayFile, TA_REPLAY_FILE_HEADER } from './ta-replay-file';
 
 // live-replay imports the ScoreSaber parser, whose LZMA worker is browser-only.
@@ -163,6 +167,25 @@ describe('recorded TA replay files', () => {
     const replay = parseTaReplayFile(encodeFile([start, chunk(2n, 1), chunk(9n, 5, 'other-play'), chunk(1n, 0.5)]));
     expect(replay.poses.map((pose) => pose.time)).toEqual([0.5, 1]);
     expect(replay.scores.map((score) => score.score)).toEqual([100, 200]);
+  });
+
+  test('names the player of the play', () => {
+    const startOf = (player?: { playerId: string; platform: ReplayPlatform }): PacketInit => ({
+      streamId: 'play-1',
+      body: { case: 'start', value: { protocolVersion: 1, player } },
+    });
+    const player = (packet: PacketInit) => parseTaReplayFile(encodeFile([packet])).metadata.player;
+    expect(player(startOf({ playerId: '76561198000000001', platform: ReplayPlatform.STEAM }))).toEqual({
+      id: '76561198000000001',
+      name: '76561198000000001',
+    });
+    // MOS' AI plays under a made-up ID: its BeatLeader profile is shown instead
+    expect(player(startOf({ playerId: 'ai-1', platform: ReplayPlatform.DEV }))).toEqual({
+      id: '360351',
+      name: 'MOSes',
+      profile: 'beatleader',
+    });
+    expect(player(startOf())).toBeUndefined();
   });
 
   test('rejects files that are not recordings or are cut off', () => {

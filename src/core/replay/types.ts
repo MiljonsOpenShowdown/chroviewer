@@ -69,6 +69,8 @@ export interface ReplayMetadata {
   player?: {
     id: string;
     name: string;
+    /** Set when `id` is a BeatLeader profile whatever the replay's format. */
+    profile?: 'beatleader';
   };
 }
 

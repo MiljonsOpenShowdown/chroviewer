@@ -1038,6 +1038,7 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
                   player={sources.replayPlayer}
                   platform={
                     sources.shareScoreIdBL !== null ||
+                    sources.replayRef.current?.metadata.player?.profile === 'beatleader' ||
                     sources.replayRef.current?.metadata.version.includes('BeatLeader')
                       ? 'beatleader'
                       : 'scoresaber'
