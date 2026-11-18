@@ -167,6 +167,10 @@ aiDiff=Easy|Normal|Hard|Expert|ExpertPlus
                               (e.g. a WIP zip URL).
 aiChar=<characteristic>       Characteristic for aiDiff, e.g. Standard, OneSaber, Lawless.
                               Default Standard.
+parentControl=true            /overlay only, with map= and aiDiff: the AI never starts by
+                              itself; the embedding page plays, pauses and seeks it with
+                              beatkhana:multiview-control messages and gets
+                              beatkhana:preview-state back (docs/broadcast-playback.md).
 The AI never uses the live source: playerId and liveSource are not needed (liveSource=ai
 and aiMap= were removed).
 

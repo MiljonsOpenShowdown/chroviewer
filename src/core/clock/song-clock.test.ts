@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vite-plus/test';
 
-import { createClock, oggVorbisDuration } from './song-clock';
+import { createAudioClock, createClock, oggVorbisDuration } from './song-clock';
 
 /** An Ogg page with one segment of `body`, at `granule`. */
 function oggPage(granule: bigint, body: number[]) {
@@ -114,5 +114,120 @@ describe('continuous replay synchronization', () => {
     clock.seek(10);
     expect(clock.getRate()).toBe(1);
     expect(clock.currentTime()).toBe(10);
+  });
+});
+
+/** An AudioParam that records its automation calls. */
+function fakeParam(value: number) {
+  const calls: [string, number, number][] = [];
+  return {
+    value,
+    calls,
+    cancelScheduledValues: vi.fn(),
+    setValueAtTime(next: number, at: number) {
+      calls.push(['set', next, at]);
+    },
+    linearRampToValueAtTime(next: number, at: number) {
+      calls.push(['linear', next, at]);
+    },
+    exponentialRampToValueAtTime(next: number, at: number) {
+      calls.push(['exponential', next, at]);
+    },
+  };
+}
+
+function fakeNode(param: ReturnType<typeof fakeParam>, name: string, edges: string[]) {
+  return {
+    name,
+    gain: param,
+    frequency: param,
+    type: '',
+    connect(target: { name: string }) {
+      edges.push(`${name}->${target.name}`);
+    },
+    disconnect: vi.fn(),
+  };
+}
+
+function fakeAudioContext() {
+  const edges: string[] = [];
+  const gains: ReturnType<typeof fakeParam>[] = [];
+  const filters: ReturnType<typeof fakeNode>[] = [];
+  const sources: ReturnType<typeof fakeNode>[] = [];
+  const context = {
+    name: 'destination',
+    currentTime: 5,
+    sampleRate: 48_000,
+    state: 'running',
+    destination: { name: 'destination' },
+    decodeAudioData: async () => ({ duration: 120 }),
+    resume: async () => {},
+    close: async () => {},
+    createGain() {
+      const param = fakeParam(1);
+      gains.push(param);
+      return fakeNode(param, `gain${gains.length}`, edges);
+    },
+    createBiquadFilter() {
+      const node = fakeNode(fakeParam(350), 'lowpass', edges);
+      filters.push(node);
+      return node;
+    },
+    createBufferSource() {
+      const node = {
+        ...fakeNode(fakeParam(1), 'source', edges),
+        playbackRate: { value: 1 },
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+      sources.push(node);
+      return node;
+    },
+  };
+  return { context, edges, gains, filters, sources };
+}
+
+describe('song effects', () => {
+  test('route the song through the effects gain and low-pass and ramp both without jumps', async () => {
+    const fake = fakeAudioContext();
+    const result = await createAudioClock({
+      audioData: new ArrayBuffer(8),
+      songBpm: 120,
+      context: fake.context as unknown as AudioContext,
+    });
+    const clock = result.unwrap();
+    expect(fake.filters[0]?.type).toBe('lowpass');
+    // Opens at the Nyquist frequency
+    expect(fake.filters[0]?.frequency.value).toBe(24_000);
+    clock.play();
+    expect(fake.edges).toEqual(['gain1->gain2', 'gain2->lowpass', 'lowpass->destination', 'source->gain1']);
+
+    const effects = fake.gains[1];
+    const frequency = fake.filters[0]?.frequency;
+    if (effects === undefined || frequency === undefined) throw new Error('missing nodes');
+    effects.value = 0.8;
+    frequency.value = 24_000;
+    clock.setEffects(0.3, 800, 1.5);
+    expect(effects.calls).toEqual([
+      ['set', 0.8, 5],
+      ['linear', 0.3, 6.5],
+    ]);
+    expect(frequency.calls).toEqual([
+      ['set', 24_000, 5],
+      ['exponential', 800, 6.5],
+    ]);
+
+    // Seeking restarts the source on the same effect nodes
+    clock.seek(30);
+    expect(fake.edges.filter((edge) => edge === 'source->gain1')).toHaveLength(2);
+
+    effects.calls.length = 0;
+    frequency.calls.length = 0;
+    effects.value = 0.3;
+    frequency.value = 800;
+    clock.setEffects(1, null, 0);
+    expect(effects.calls.at(-1)).toEqual(['set', 1, 5]);
+    expect(frequency.calls.at(-1)).toEqual(['set', 24_000, 5]);
+    clock.dispose();
   });
 });

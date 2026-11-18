@@ -22,7 +22,9 @@ import {
   type ViewerSearch,
 } from '../viewer/viewer-search';
 import { quantizedBeatAt } from '../viewer/viewer-timeline';
+import { parseAudioFxMessage, type AudioFxMessage } from './overlay-audio-fx';
 import { OVERLAY_SETTINGS } from './overlay-defaults';
+import { parsePreviewControlMessage, type PreviewStateMessage } from './overlay-preview-control';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -125,6 +127,9 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
   settingsRef.current = settings;
   const [error, setError] = useState('');
   const [embeddedLights, setEmbeddedLights] = useState<LightshowMode | null>(null);
+  // A multiview tile gets the parent's audio-fx from the multiview shell
+  const [embeddedAudioFx, setEmbeddedAudioFx] = useState<AudioFxMessage | null>(null);
+  const audioFx = multiview === undefined ? embeddedAudioFx : multiview.audioFx;
   const presetLights = search.qualityPreset === 'broadcast' ? 'static' : null;
   const authoritativeLights = embeddedLights ?? search.lights ?? presetLights;
   const [lightshowMode, setLightshowMode] = useState<LightshowMode>(
@@ -218,16 +223,22 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
         };
   // Built-in AI, same URL parameters as the viewer: map= plus aiDiff (aiChar)
   // plays that difficulty like the viewer's AI Play button.
-  useAiPreview({
+  const aiAutoStart =
+    multiview === undefined && search.map !== undefined && search.aiDiff !== undefined
+      ? { difficulty: search.aiDiff, characteristic: search.aiChar ?? 'Standard' }
+      : undefined;
+  // parentControl=true: the embedding page plays, pauses and seeks the AI
+  const aiParentControl = aiAutoStart !== undefined && search.parentControl === true;
+  const aiPreview = useAiPreview({
     sources,
     session,
     transport,
     setError,
-    autoStart:
-      multiview === undefined && search.map !== undefined && search.aiDiff !== undefined
-        ? { difficulty: search.aiDiff, characteristic: search.aiChar ?? 'Standard' }
-        : undefined,
+    autoStart: aiAutoStart,
+    parentControl: aiParentControl,
   });
+  const aiPreviewRef = useRef(aiPreview);
+  aiPreviewRef.current = aiPreview;
   const taLive = liveTarget?.source === 'ta' || liveTarget?.source === 'cocu';
   useEffect(() => {
     if (!taLive || liveTarget === null || multiview !== undefined) return;
@@ -309,6 +320,20 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
       window.removeEventListener('message', applyEmbeddedViewerSettings);
     };
   }, [multiview !== undefined]);
+  useEffect(() => {
+    if (multiview !== undefined) return;
+
+    function receiveAudioFx(event: MessageEvent) {
+      if (event.source !== window.parent) return;
+      const fx = parseAudioFxMessage(event.data);
+      if (fx !== null) setEmbeddedAudioFx(fx);
+    }
+
+    window.addEventListener('message', receiveAudioFx);
+    return () => {
+      window.removeEventListener('message', receiveAudioFx);
+    };
+  }, [multiview !== undefined]);
   const live = useLiveExperience({
     appendReplayHeightEvents: session.appendLiveReplayHeightEvents,
     appendReplayNoteEvents: session.appendLiveReplayNoteEvents,
@@ -333,10 +358,55 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
   });
   const transportRef = useRef(transport);
   transportRef.current = transport;
+  useEffect(() => {
+    if (!aiParentControl) return;
+    let parentOrigin: string | null = null;
+
+    function receiveControl(event: MessageEvent) {
+      if (event.source !== window.parent) return;
+      const message = parsePreviewControlMessage(event.data);
+      if (message === null) return;
+      parentOrigin = event.origin;
+      aiPreviewRef.current.control(message.action, message.action === 'seek' ? message.time : undefined);
+    }
+
+    // Same cadence as multiview-state. Sent before the parent speaks too (to
+    // any origin, it holds no private data), so it can wait for ready first.
+    const timer = window.setInterval(() => {
+      const clock = transportRef.current.clockRef.current;
+      const message: PreviewStateMessage = {
+        type: 'beatkhana:preview-state',
+        version: 1,
+        ...aiPreviewRef.current.parentState(),
+        time: clock?.currentTime() ?? 0,
+        playing: clock?.isPlaying() ?? false,
+        duration: transportRef.current.duration,
+      };
+      window.parent.postMessage(message, parentOrigin === null || parentOrigin === 'null' ? '*' : parentOrigin);
+    }, 200);
+    window.addEventListener('message', receiveControl);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('message', receiveControl);
+    };
+  }, [aiParentControl]);
+  // Each new message ramps from where the song is now; the transport keeps it
+  // for clocks created later (a remounted tile, a reloaded song)
+  useEffect(() => {
+    if (audioFx === null) return;
+    transportRef.current.setAudioEffects(audioFx.volume, audioFx.lowpassHz, audioFx.rampMs);
+  }, [audioFx]);
   // A recorded replay has no live connection: it is ready once its map and
   // replay are loaded, and stays ready while paused so it remains in sync.
+  // It waits for the difficulty to be selected, not just the song clock: the
+  // initial seek to the start follows the selection, and would undo a parent
+  // seek sent as soon as the tile reported it was ready.
   const replayStatus: LiveStatus =
-    error !== '' ? 'error' : transport.duration > 0 && sources.mapMeta !== null ? 'watching' : 'loading';
+    error !== ''
+      ? 'error'
+      : transport.duration > 0 && sources.mapMeta !== null && session.selectedKey !== ''
+        ? 'watching'
+        : 'loading';
   useEffect(() => {
     if (multiview === undefined) return;
     multiview.onPlayback({
@@ -366,6 +436,7 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
     live.status,
     live.streamId,
     multiview,
+    session.selectedKey,
     sources.mapIdentity,
     sources.mapMeta,
     sources.songBpm,

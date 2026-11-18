@@ -131,6 +131,86 @@ To play the recorded tiles faster or slower (e.g. following a debug playback at
 iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'rate', rate: 4 }, '*');
 ```
 
+A recorded tile can be sought before its first `play`: it stays paused at that
+time and `play` starts it from there. Wait until the tile's `status` in
+`beatkhana:multiview-state` is `watching` (its map, replay, song and difficulty
+are loaded); a `seek` sent earlier is lost. Send `play` after a state message
+shows the sought time, not in the same task as the `seek`.
+
+## Song audio effects
+
+On `/overlay` (multiview or a single viewer), the parent can fade the song down
+and muffle it with a low-pass filter while it keeps playing, e.g. to keep a map
+running quietly under other graphics. Hitsounds are not affected.
+
+```ts
+iframe.contentWindow.postMessage(
+  { type: 'beatkhana:audio-fx', version: 1, volume: 0.3, lowpassHz: 800, rampMs: 1500 },
+  '*',
+);
+// Back to normal
+iframe.contentWindow.postMessage(
+  { type: 'beatkhana:audio-fx', version: 1, volume: 1, lowpassHz: null, rampMs: 1000 },
+  '*',
+);
+```
+
+- `volume`: 0 to 1, a multiplier on the song after its normal volume; 1 is unchanged.
+- `lowpassHz`: the cutoff in Hz, 20 or more (capped at the output's Nyquist
+  frequency); `null` opens the filter fully.
+- `rampMs`: 0 to 60000; both values ramp from where they are now (also mid-ramp), 0 is instant.
+
+The effect applies to every tile and stays through seeks, play, pause and new
+`beatkhana:multiview-config` messages (tiles loaded later start with it), until
+the next `beatkhana:audio-fx` or a reload. Invalid messages are ignored.
+
+## Parent-driven AI preview
+
+The single `/overlay` (not multiview) plays a map with the built-in AI through
+`map=<key>&aiDiff=<difficulty>&aiChar=<characteristic>`. It normally starts by
+itself once a few seconds are generated. Add `parentControl=true` and it never
+starts on its own: the AI still generates the play from the song start, and the
+parent drives playback with the multiview control messages:
+
+```ts
+// /overlay?map=key&aiDiff=ExpertPlus&aiChar=Standard&parentControl=true
+iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'seek', time: 55 }, '*');
+iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'play' }, '*');
+iframe.contentWindow.postMessage({ type: 'beatkhana:multiview-control', version: 1, action: 'pause' }, '*');
+```
+
+- `seek`: moves the playhead to `time` and keeps it paused (or playing). A time
+  the AI has not generated yet (or a seek sent before `ready`) is kept and
+  applied as soon as the play is generated that far and shown; playback holds
+  still until then. Only the last seek counts.
+- `play`: arms playback. It starts from the current (or pending sought) time
+  once at least 3 seconds past the playhead are generated, by itself if that
+  takes a while. Playing never runs past the generated play: it pauses at the
+  edge and resumes once 3 seconds are ahead again.
+- `pause`: pauses and disarms.
+- `rate`, `sync` and a seek's `tileId` are ignored. Only messages from the
+  parent frame count.
+
+Commands take effect on the next 100 ms check. Five times a second the overlay
+posts its state to the parent (to any origin until the parent has sent a
+control message, then to that origin):
+
+```ts
+{
+  type: 'beatkhana:preview-state',
+  version: 1,
+  ready: boolean, // the map, song and AI play are loaded and shown
+  time: number, // the playhead, in seconds
+  playing: boolean,
+  generatedUntil: number, // song time the AI has generated up to; the duration once done
+  duration: number, // 0 before the song is loaded
+}
+```
+
+`beatkhana:audio-fx` works the same way in this mode. Without
+`parentControl=true` nothing changes: the AI starts and plays by itself, and no
+state is posted.
+
 ## Controlled live tiles
 
 A play still in progress has no recording yet. To watch it from any point, set

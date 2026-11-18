@@ -23,6 +23,8 @@ export interface SongClock {
   correctDrift(songTime: number): void;
   setRate(rate: number): void;
   setVolume(volume: number): void;
+  //volume: a gain (0 to 1) and a low-pass cutoff in Hz (null: fully open), ramped in rampSeconds.
+  setEffects(volume: number, lowpassHz: number | null, rampSeconds: number): void;
   setAudioOffset(offset: number): void;
   unlockAudio(): Promise<boolean>;
   dispose(): void;
@@ -34,6 +36,7 @@ export interface ClockDriver {
   stop?(): void;
   setRate?(rate: number): void;
   setVolume?(volume: number): void;
+  setEffects?(volume: number, lowpassHz: number | null, rampSeconds: number): void;
   audioBlocked?(): boolean;
   unlockAudio?(): Promise<boolean>;
   dispose?(): void;
@@ -115,6 +118,9 @@ export function createClock(duration: number, songBpm: number, driver: ClockDriv
     },
     setVolume: (volume: number) => {
       driver.setVolume?.(Math.min(Math.max(volume, 0), 1));
+    },
+    setEffects: (volume: number, lowpassHz: number | null, rampSeconds: number) => {
+      driver.setEffects?.(Math.min(Math.max(volume, 0), 1), lowpassHz, Math.max(rampSeconds, 0));
     },
     setAudioOffset: (offset: number) => {
       if (offset === audioOffset) return;
@@ -211,6 +217,16 @@ async function decodeAudio(ctx: AudioContext, audioData: ArrayBuffer) {
   return decodeOggVorbis(ctx, audioData);
 }
 
+/** Moves a param from its current value (also mid-ramp) to value over seconds, without a jump. */
+function rampParam(param: AudioParam, value: number, now: number, seconds: number, exponential: boolean) {
+  const current = param.value;
+  param.cancelScheduledValues(now);
+  param.setValueAtTime(current, now);
+  if (seconds <= 0 || current === value) param.setValueAtTime(value, now);
+  else if (exponential) param.exponentialRampToValueAtTime(value, now + seconds);
+  else param.linearRampToValueAtTime(value, now + seconds);
+}
+
 export async function createAudioClock({ audioData, songBpm, volume = 1, context }: AudioClockOptions) {
   const ownsContext = context === undefined;
   const ctx = context ?? new AudioContext();
@@ -222,7 +238,15 @@ export async function createAudioClock({ audioData, songBpm, volume = 1, context
   const buffer = decoded.value;
   const gain = ctx.createGain();
   gain.gain.value = Math.min(Math.max(volume, 0), 1);
-  gain.connect(ctx.destination);
+  // Song-only effects (setEffects): source -> volume -> effects gain -> low-pass -> output
+  const effectsGain = ctx.createGain();
+  const lowpass = ctx.createBiquadFilter();
+  const openFrequency = ctx.sampleRate / 2;
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = openFrequency;
+  gain.connect(effectsGain);
+  effectsGain.connect(lowpass);
+  lowpass.connect(ctx.destination);
   let source: AudioBufferSourceNode | undefined;
 
   function stop() {
@@ -255,6 +279,12 @@ export async function createAudioClock({ audioData, songBpm, volume = 1, context
     setVolume: (nextVolume) => {
       gain.gain.setValueAtTime(nextVolume, ctx.currentTime);
     },
+    setEffects: (nextVolume, lowpassHz, rampSeconds) => {
+      const frequency = lowpassHz === null ? openFrequency : Math.min(Math.max(lowpassHz, 20), openFrequency);
+      rampParam(effectsGain.gain, nextVolume, ctx.currentTime, rampSeconds, false);
+      // Exponential, so the cutoff sweeps evenly by ear
+      rampParam(lowpass.frequency, frequency, ctx.currentTime, rampSeconds, true);
+    },
     unlockAudio: async () => {
       await ctx.resume();
       return ctx.state === 'running';
@@ -262,6 +292,8 @@ export async function createAudioClock({ audioData, songBpm, volume = 1, context
     dispose: () => {
       stop();
       gain.disconnect();
+      effectsGain.disconnect();
+      lowpass.disconnect();
       if (ownsContext) void ctx.close();
     },
   };

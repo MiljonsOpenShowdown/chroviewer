@@ -128,6 +128,8 @@ export const viewerSearchSchema = z.pipe(
     // Built-in AI player: with map=, it plays this difficulty in the map preview
     aiDiff: z.catch(z.optional(z.enum(['Easy', 'Normal', 'Hard', 'Expert', 'ExpertPlus'])), undefined),
     aiChar: z.catch(z.optional(z.string().check(z.regex(/^[A-Za-z0-9]{1,24}$/))), undefined),
+    // /overlay only: the embedding page plays, pauses and seeks the AI instead of it starting itself
+    parentControl: z.catch(z.optional(z.boolean()), undefined),
     tournamentId: z.catch(z.optional(liveIdSchema), undefined),
     roomId: z.catch(z.optional(liveIdSchema), undefined),
     matchId: z.catch(z.optional(liveIdSchema), undefined),

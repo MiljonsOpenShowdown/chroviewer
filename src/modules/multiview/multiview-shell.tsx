@@ -7,6 +7,7 @@ import { fetchBeatSaverHash } from '../../sources/beatsaver/provider';
 import { EmbeddedRealtimeScoreTimeline } from '../live/embedded-realtime-score-sync';
 import { LiveMapCache } from '../live/live-map-cache';
 import type { LiveTimelineEvent } from '../live/live-types';
+import { parseAudioFxMessage, type AudioFxMessage } from '../overlay/overlay-audio-fx';
 import type { MultiviewPlaybackSnapshot, MultiviewTileProps } from '../viewer/viewer-embed-types';
 import { captureViewerConsole, MultiviewEventLog } from './multiview-event-log';
 import type {
@@ -186,6 +187,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
   playersRef.current = players;
   const configSignatureRef = useRef('');
   const [tilePlayback, setTilePlayback] = useState<Map<string, TilePlaybackState>>(() => new Map());
+  const [audioFx, setAudioFx] = useState<AudioFxMessage | null>(null);
   const mapCache = useMemo(() => new LiveMapCache(), []);
   const timeline = useMemo(() => new MultiviewTimeline(), []);
   const startBarrier = useMemo(() => new MultiviewStartBarrier(), []);
@@ -254,7 +256,8 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         for (const hash of preload.slice(0, 4)) {
           if (typeof hash !== 'string' || !/^[0-9a-f]{40}$/i.test(hash)) continue;
           const key = hash.toUpperCase();
-          if (!mapCache.has(key) && !mapCache.recentlyFailed(key)) void mapCache.getOrLoad(key, () => fetchBeatSaverHash(key));
+          if (!mapCache.has(key) && !mapCache.recentlyFailed(key))
+            void mapCache.getOrLoad(key, () => fetchBeatSaverHash(key));
         }
       }
       // Scores update continuously. Keep them in the timeline without turning
@@ -346,6 +349,11 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
       if (!isRecord(data)) return;
       if (data.type === 'beatkhana:multiview-control') {
         if (validControl(data)) applyControl(data);
+        return;
+      }
+      if (data.type === 'beatkhana:audio-fx') {
+        const fx = parseAudioFxMessage(data);
+        if (fx !== null) setAudioFx(fx);
         return;
       }
       applyConfig(data);
@@ -692,6 +700,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
               parser,
               onPlayback: (snapshot) => handlePlayback(player.id, snapshot),
               onLiveEvent: (event) => handleLiveEvent(player.id, event),
+              audioFx,
             }}
           />
         ))}

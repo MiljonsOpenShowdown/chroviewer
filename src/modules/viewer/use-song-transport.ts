@@ -41,6 +41,8 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
   const transitionGainRef = useRef(1);
   const transitionFadeGenerationRef = useRef(0);
   const retainedAudioRef = useRef<RetainedAudioSource | null>(null);
+  // Song effects (setAudioEffects), kept for every clock this transport creates
+  const audioEffectsRef = useRef<{ volume: number; lowpassHz: number | null }>({ volume: 1, lowpassHz: null });
   const songBpmRef = useRef(120);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
@@ -245,6 +247,7 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
         ? 0
         : settingsRef.current.masterVolume * settingsRef.current.songVolume * transitionGainRef.current,
     );
+    clock.setEffects(audioEffectsRef.current.volume, audioEffectsRef.current.lowpassHz, 0);
     clockRef.current = clock;
     autoplayRef.current = false;
     hitsounds.load(audioActiveRef.current ? options.hitsoundEvents : []);
@@ -301,6 +304,7 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
       return;
     }
     copyClockState(previous, result.value);
+    result.value.setEffects(audioEffectsRef.current.volume, audioEffectsRef.current.lowpassHz, 0);
     clockRef.current = result.value;
     audioActiveRef.current = true;
     previous.dispose();
@@ -412,6 +416,12 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
     clockRef.current?.setRate(rate);
   }
 
+  /** Fades the song (not hitsounds) to volume and a low-pass cutoff (null: open); kept across seeks and new song clocks. */
+  function setAudioEffects(volume: number, lowpassHz: number | null, rampMs: number) {
+    audioEffectsRef.current = { volume, lowpassHz };
+    clockRef.current?.setEffects(volume, lowpassHz, rampMs / 1000);
+  }
+
   return {
     audioBlocked,
     beatStepDenominator,
@@ -431,6 +441,7 @@ export function useSongTransport({ lightshowModeRef, settings, settingsRef }: Us
     setBeatStepDenominator,
     setBeatStepNumerator,
     setHitsoundEvents,
+    setAudioEffects,
     setPlaybackRate,
     setTransitionGain,
     started,

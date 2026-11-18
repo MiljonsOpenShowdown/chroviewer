@@ -16,6 +16,7 @@ import {
 import { ReplayStreamPacketSchema } from '../live/generated/proto/scoresaber/live/v1/replay_stream_pb';
 import { createLiveReplay } from '../live/live-replay';
 import { appendChunk, applyEnd } from '../live/ta-replay-file';
+import { aiParentControlStep, type AiParentControl } from './ai-preview-control';
 import type { useSongTransport } from './use-song-transport';
 import type { useViewerSession } from './use-viewer-session';
 import type { useViewerSources } from './use-viewer-sources';
@@ -117,11 +118,14 @@ export function useAiPreview(options: {
   transport: Transport;
   setError: (message: string) => void;
   autoStart?: AiPlayTarget;
+  /** The embedding page plays, pauses and seeks (control); it never starts on its own. */
+  parentControl?: boolean;
 }) {
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const runRef = useRef<AiPreviewRun | null>(null);
   const autoStartedRef = useRef(false);
+  const parentControlRef = useRef<AiParentControl>({ armed: false, target: null });
   const [active, setActive] = useState(false);
   const [progress, setProgress] = useState(0);
   // Whether this map's specialist model plays (public/ai/specialists) instead of model.onnx.
@@ -303,6 +307,13 @@ export function useAiPreview(options: {
       if (run === null || !run.viewReady || clock === null) return;
       const edge = run.finished ? Number.POSITIVE_INFINITY : run.edge;
       const now = clock.currentTime();
+      if (optionsRef.current.parentControl === true) {
+        const step = aiParentControlStep(parentControlRef.current, edge, now, clock.isPlaying(), LEAD_SECONDS);
+        if (step.pause) transport.pause();
+        if (step.seek !== null) transport.seek(step.seek);
+        if (step.play) transport.play({ autoplay: true });
+        return;
+      }
       if (!run.started || run.held) {
         if (edge - now < LEAD_SECONDS) return;
         run.started = true;
@@ -325,5 +336,26 @@ export function useAiPreview(options: {
     [],
   );
 
-  return { active, progress, specialist, start, stop };
+  /** parentControl: play arms playback, pause disarms it, seek is applied once generated and shown. */
+  function control(action: 'play' | 'pause' | 'seek', time?: number) {
+    const state = parentControlRef.current;
+    if (action === 'seek') {
+      state.target = time ?? 0;
+      return;
+    }
+    state.armed = action === 'play';
+    if (action === 'pause') optionsRef.current.transport.pause();
+  }
+
+  /** parentControl: whether seeks apply now, and the song time generated so far. */
+  function parentState() {
+    const run = runRef.current;
+    const { transport } = optionsRef.current;
+    return {
+      ready: run !== null && run.viewReady && transport.duration > 0,
+      generatedUntil: run === null ? 0 : run.finished ? transport.duration : run.edge,
+    };
+  }
+
+  return { active, control, parentState, progress, specialist, start, stop };
 }

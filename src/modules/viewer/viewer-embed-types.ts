@@ -5,6 +5,7 @@ import type { LiveStatus, LiveTimelineEvent } from '../live/live-types';
 import type { MultiviewReplayScore } from '../multiview/multiview-protocol';
 import type { MultiviewStartBarrier } from '../multiview/multiview-start-barrier';
 import type { MultiviewTimeline } from '../multiview/multiview-timeline';
+import type { AudioFxMessage } from '../overlay/overlay-audio-fx';
 import type { MapMeta } from './viewer-types';
 
 // Kept apart from viewer-shell so multiview and the overlay shell can use these
@@ -60,6 +61,8 @@ export interface MultiviewTileOptions {
   onPlayback(snapshot: MultiviewPlaybackSnapshot): void;
   /** The tile's live connection timeline, for MultiviewEventsMessage. */
   onLiveEvent: (event: LiveTimelineEvent) => void;
+  /** The parent's last `beatkhana:audio-fx`, applied by the overlay shell; null before one. */
+  audioFx: AudioFxMessage | null;
 }
 
 export interface MultiviewTileProps {
