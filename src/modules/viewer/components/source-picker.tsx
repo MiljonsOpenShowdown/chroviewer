@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
-import { ArrowRight, FolderOpen, Link as LinkIcon } from 'lucide-react';
+import { ArrowRight, File as FileIcon, FolderOpen, Link as LinkIcon, X } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { isViewerSourceEnabled } from '../../../sources/source-config';
 import { configurableViewerSources, type MapLookup } from '../../../sources/source-types';
+import type { BrEntry } from '../../br/br-search';
 import { isRemoteSourceUrl } from '../viewer-search';
 import type { ViewerSource } from '../viewer-types';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { InputGroup, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -24,9 +26,40 @@ interface SourcePickerProps {
   onInputChange: (input: string) => void;
   onOpenFiles: () => void;
   onSubmit: (source: ViewerSource) => void;
+  onStartBattleRoyale: (entries: BrEntry[]) => void;
 }
 
 const initialSource = configurableViewerSources.find(isViewerSourceEnabled) ?? 'link';
+
+function brEntryKey(entry: BrEntry) {
+  switch (entry.kind) {
+    case 'scoresaber':
+    case 'beatleader':
+      return `${entry.kind}:${entry.id}`;
+    case 'url':
+      return `url:${entry.url}`;
+    case 'file':
+      return `file:${entry.file.name}:${entry.file.size}:${entry.file.lastModified}`;
+  }
+}
+
+function brEntryText(entry: BrEntry) {
+  switch (entry.kind) {
+    case 'scoresaber':
+    case 'beatleader':
+      return entry.id;
+    case 'url':
+      return entry.url;
+    case 'file':
+      return entry.file.name;
+  }
+}
+
+function BrEntryIcon({ entry }: { entry: BrEntry }) {
+  if (entry.kind === 'url') return <LinkIcon className="size-4 shrink-0" />;
+  if (entry.kind === 'file') return <FileIcon className="size-4 shrink-0" />;
+  return <img className="size-4 shrink-0" src={`${import.meta.env.BASE_URL}${entry.kind}.svg`} alt={entry.kind} />;
+}
 
 export function SourcePicker({
   choices,
@@ -37,13 +70,19 @@ export function SourcePicker({
   onInputChange,
   onOpenFiles,
   onSubmit,
+  onStartBattleRoyale,
 }: SourcePickerProps) {
   const t = useTranslations('source');
   const [source, setSource] = useState<ViewerSource>(initialSource);
+  // The Battle Royale list survives tab switches and unchecking the box
+  const [battleRoyale, setBattleRoyale] = useState(false);
+  const [brEntries, setBrEntries] = useState<BrEntry[]>([]);
+  const brFileInputRef = useRef<HTMLInputElement>(null);
   const scoreSaber = source === 'scoresaber';
   const beatLeader = source === 'beatleader';
   const isScore = scoreSaber || beatLeader;
   const link = source === 'link';
+  const brActive = battleRoyale && source !== 'beatsaver';
   const trimmedInput = input.trim();
   const validInput =
     trimmedInput !== '' && (!isScore || /^\d+$/.test(trimmedInput)) && (!link || isRemoteSourceUrl(trimmedInput));
@@ -61,6 +100,32 @@ export function SourcePicker({
       : link
         ? t('linkInputPlaceholder')
         : t('beatsaverInputPlaceholder');
+
+  function addBrEntries(added: BrEntry[]) {
+    setBrEntries((current) => {
+      const keys = new Set(current.map(brEntryKey));
+      const next = [...current];
+      for (const entry of added) {
+        const key = brEntryKey(entry);
+        if (keys.has(key)) continue;
+        keys.add(key);
+        next.push(entry);
+      }
+      return next;
+    });
+  }
+
+  function addBrInput() {
+    if (!validInput) return;
+    addBrEntries([
+      scoreSaber
+        ? { kind: 'scoresaber', id: trimmedInput }
+        : beatLeader
+          ? { kind: 'beatleader', id: trimmedInput }
+          : { kind: 'url', url: trimmedInput },
+    ]);
+    onInputChange('');
+  }
 
   return (
     <>
@@ -142,7 +207,8 @@ export function SourcePicker({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              onSubmit(source);
+              if (brActive) addBrInput();
+              else onSubmit(source);
             }}
           >
             <InputGroup>
@@ -157,20 +223,91 @@ export function SourcePicker({
                   onInputChange(event.currentTarget.value);
                 }}
               />
-              {!link && (
-                <InputGroupButton aria-label={t('openFiles')} title={t('openFiles')} onClick={onOpenFiles}>
+              {(!link || brActive) && (
+                <InputGroupButton
+                  aria-label={t('openFiles')}
+                  title={t('openFiles')}
+                  onClick={brActive ? () => brFileInputRef.current?.click() : onOpenFiles}
+                >
                   <FolderOpen />
                 </InputGroupButton>
               )}
               <InputGroupButton
                 type="submit"
-                aria-label={isScore ? t('loadReplay') : link ? t('loadLink') : t('loadMap')}
+                aria-label={
+                  brActive ? t('brAddEntry') : isScore ? t('loadReplay') : link ? t('loadLink') : t('loadMap')
+                }
                 disabled={!validInput}
               >
                 <ArrowRight />
               </InputGroupButton>
             </InputGroup>
           </form>
+          {source !== 'beatsaver' && (
+            <label
+              className="text-muted-foreground mt-3 flex w-fit cursor-pointer items-center gap-2 text-sm select-none"
+              htmlFor="battle-royale"
+            >
+              <Checkbox
+                id="battle-royale"
+                checked={battleRoyale}
+                onCheckedChange={(checked) => {
+                  setBattleRoyale(checked === true);
+                }}
+              />
+              {t('battleRoyale')}
+            </label>
+          )}
+          {brActive && (
+            <section className="mt-3 grid gap-2">
+              {brEntries.length > 0 && (
+                <ul className="grid max-h-40 gap-1 overflow-y-auto" aria-label={t('brEntries')}>
+                  {brEntries.map((entry) => (
+                    <li
+                      key={brEntryKey(entry)}
+                      className="bg-background/40 flex h-8 items-center gap-2 rounded-md border pr-0.5 pl-2 text-sm"
+                    >
+                      <BrEntryIcon entry={entry} />
+                      <span className="min-w-0 flex-1 truncate">{brEntryText(entry)}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-7 cursor-pointer"
+                        aria-label={t('brRemoveEntry', { entry: brEntryText(entry) })}
+                        onClick={() => {
+                          setBrEntries((current) => current.filter((other) => other !== entry));
+                        }}
+                      >
+                        <X />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button
+                type="button"
+                className="w-full cursor-pointer"
+                disabled={brEntries.length < 2}
+                onClick={() => {
+                  onStartBattleRoyale(brEntries);
+                }}
+              >
+                {t('brStart')}
+              </Button>
+            </section>
+          )}
+          <input
+            ref={brFileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".dat,.bsor"
+            onChange={(event) => {
+              addBrEntries([...(event.currentTarget.files ?? [])].map((file): BrEntry => ({ kind: 'file', file })));
+              event.currentTarget.value = '';
+            }}
+          />
           {scoreSaber && choices.length > 0 && (
             <section>
               <h2 className="text-muted-foreground mt-4 mb-2 text-xs font-medium">{t('multipleMatches')}</h2>

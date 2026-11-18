@@ -8,7 +8,6 @@ import { isBeatLeaderReplay } from '../../core/replay/parse-beatleader';
 import { applyLegacyScoreSaberMetadata, isScoreSaberReplay } from '../../core/replay/parse-scoresaber';
 import { replayMapHash, type Replay } from '../../core/replay/types';
 import { extractMapArchive } from '../../sources/archive';
-import { isViewerSourceEnabled } from '../../sources/source-config';
 import { SourceError, sourceError } from '../../sources/source-error';
 import type {
   BeatSaverMapSource,
@@ -16,8 +15,8 @@ import type {
   ScoreSaberReplayPlayer,
   SourceResult,
 } from '../../sources/source-types';
-import { isTaReplayFile, parseTaReplayFile } from '../live/ta-replay-file';
 import { parseMapPackage } from './parse-map-package';
+import { legacyMetadataFromFilename, parseReplayBytes } from './replay-loaders';
 import { sourceErrorMessage } from './source-error-message';
 import type { DifficultyRow, MapIdentity, MapMeta, ViewerSourceLink } from './viewer-types';
 
@@ -44,27 +43,6 @@ interface UseViewerFileSourceOptions {
   onMapLoaded: () => void;
   onSourceLoaded: () => void;
   sharedParser?: BeatmapParser;
-}
-
-const legacyDifficultyRanks = new Map(
-  Object.entries({
-    easy: 1,
-    normal: 3,
-    hard: 5,
-    expert: 7,
-    expertplus: 9,
-  }),
-);
-
-function legacyMetadataFromFilename(name: string) {
-  const match = /-([^-]+)-([^-]+)-([0-9a-f]{40})\.dat$/i.exec(name);
-  if (match === null) return null;
-  const difficulty = legacyDifficultyRanks.get(match[1]?.toLowerCase() ?? '');
-  const characteristic = match[2];
-  const hash = match[3];
-  return difficulty === undefined || characteristic === undefined || hash === undefined
-    ? null
-    : { difficulty, characteristic, hash };
 }
 
 export function useViewerFileSource({
@@ -120,43 +98,12 @@ export function useViewerFileSource({
   }
 
   async function parseReplay(data: ArrayBuffer, source: SourceError['source'] = 'local') {
-    const bytes = new Uint8Array(data);
-    if (
-      (isBeatLeaderReplay(bytes) && !isViewerSourceEnabled('beatleader')) ||
-      (isScoreSaberReplay(bytes) && !isViewerSourceEnabled('scoresaber'))
-    ) {
-      return Result.err(
-        new SourceError({
-          message: t('errors.sourceDisabled'),
-          source,
-          operation: 'validate-replay-source',
-        }),
-      );
-    }
-    // Recorded TournamentAssistant streams are decoded here rather than in the
-    // parser worker, which only knows the BeatLeader and ScoreSaber formats.
-    if (isTaReplayFile(bytes)) {
-      return Result.try({
-        try: () => parseTaReplayFile(bytes),
-        catch: (cause) =>
-          sourceError(cause, {
-            message: cause instanceof Error ? cause.message : 'replay could not be parsed',
-            source,
-            operation: 'parse-replay',
-          }),
-      });
-    }
-    parserRef.current ??= new BeatmapParser();
-    const parser = parserRef.current;
-    return Result.tryPromise({
-      try: () => parser.parseReplay(data),
-      catch: (cause) =>
-        sourceError(cause, {
-          message: cause instanceof Error ? cause.message : 'replay could not be parsed',
-          source,
-          operation: 'parse-replay',
-        }),
-    });
+    return parseReplayBytes(
+      data,
+      source,
+      () => (parserRef.current ??= new BeatmapParser()),
+      t('errors.sourceDisabled'),
+    );
   }
 
   async function loadSourceFiles(

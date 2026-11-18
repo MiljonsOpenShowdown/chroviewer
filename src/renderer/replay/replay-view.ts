@@ -43,6 +43,7 @@ import {
 } from './custom-saber';
 import { ReplayGameplayHud } from './hud/gameplay-hud';
 import type { HudLayout } from './hud/hud-layouts';
+import { PlayerNameLabel } from './player-name-label';
 import { ReplayCameraController, type ReplayCameraMode } from './replay-camera';
 import {
   createReplaySurfaceMaterial,
@@ -76,8 +77,12 @@ function setCustomSaberMaterialColor(material: ShaderMaterial, color: Rgb) {
   emissionColor?.setRGB(...color).convertSRGBToLinear();
 }
 
+// Height of a player's name label above the headset, in metres
+const nameLabelHeight = 0.3;
+
 export class ReplayView {
   readonly root = new Group();
+  readonly hudRoot: Group;
 
   private readonly replayPlayerRoot = new Object3D();
   private readonly replayHeadTrack = new Object3D();
@@ -94,9 +99,11 @@ export class ReplayView {
   private readonly replayRightTip = new Object3D();
   private readonly replayLeftTrailBase = new Object3D();
   private readonly replayRightTrailBase = new Object3D();
-  private readonly gameplayHud = new ReplayGameplayHud();
+  // Both are null in a render-only view (see the constructor)
+  private readonly gameplayHud: ReplayGameplayHud | null;
   private readonly replayHeadset: ReplayHeadset;
-  private readonly cameraController: ReplayCameraController;
+  private readonly cameraController: ReplayCameraController | null;
+  private nameLabel: PlayerNameLabel | null = null;
   private readonly replayPosition = new Vector3();
   private readonly replayQuaternion = new Quaternion();
   private readonly worldQuaternion = new Quaternion();
@@ -120,6 +127,8 @@ export class ReplayView {
   private replayTrailTime = Number.NEGATIVE_INFINITY;
   private localSpaceSaberTrail = false;
   private showHeadset = DEFAULT_REPLAY_CAMERA_SETTINGS.showHeadset;
+  private playerHeadsetVisible = true;
+  private playerLabelVisible = true;
   private orthographicOverlayRendering = false;
   private saberSettings = DEFAULT_REPLAY_SABER_SETTINGS;
   private replay: Replay | null = null;
@@ -127,13 +136,19 @@ export class ReplayView {
   private lightshowMode: LightshowMode = 'full';
   private gameUIEnabled = true;
 
+  /**
+   * `camera` null makes a render-only view, for the other players of a multi-player scene: it draws sabers, trails,
+   * headset and name label, but owns no camera controller and no gameplay HUD (its `hudRoot` stays empty).
+   */
   constructor(
-    camera: PerspectiveCamera,
+    camera: PerspectiveCamera | null,
     private readonly fog: FogUniforms,
     private readonly directionalLights: ReplayDirectionalLights,
     private readonly refreshMirrorMaterials: () => void,
   ) {
-    this.cameraController = new ReplayCameraController(camera);
+    this.gameplayHud = camera === null ? null : new ReplayGameplayHud();
+    this.hudRoot = this.gameplayHud?.root ?? new Group();
+    this.cameraController = camera === null ? null : new ReplayCameraController(camera);
     this.replayHeadset = new ReplayHeadset(fog, directionalLights, refreshMirrorMaterials);
     const metalMaterial = createReplaySurfaceMaterial(fog, directionalLights, SABER_METAL_SURFACE);
     const gripMaterial = createReplaySurfaceMaterial(fog, directionalLights, SABER_GRIP_SURFACE);
@@ -193,10 +208,6 @@ export class ReplayView {
     this.applySaberModel();
   }
 
-  get hudRoot() {
-    return this.gameplayHud.root;
-  }
-
   get headPosition() {
     this.replayHeadset.root.updateWorldMatrix(true, false);
     return this.replayHeadset.root.getWorldPosition(this.worldHeadPosition);
@@ -238,8 +249,9 @@ export class ReplayView {
     return this.replay !== null;
   }
 
+  /** A render-only view has no camera, so it reports 'static'. */
   get cameraMode() {
-    return this.cameraController.cameraMode;
+    return this.cameraController?.cameraMode ?? 'static';
   }
 
   get hasPoses() {
@@ -258,75 +270,107 @@ export class ReplayView {
     this.lightshowMode = mode;
     const forced = isForcedLightshowMode(mode);
     this.root.visible = !forced && this.hasPoses;
-    this.gameplayHud.setEnabled(this.gameUIEnabled && !forced);
+    this.gameplayHud?.setEnabled(this.gameUIEnabled && !forced);
     if (forced) {
       this.clearTrails();
     }
-    this.cameraController.setForced(forced, this.hasReplay);
+    this.cameraController?.setForced(forced, this.hasReplay);
     this.updateHeadsetVisibility();
   }
 
   setReplay(replay: Replay | null, hitScoreVisualizer?: HitScoreVisualizerConfig | null) {
     this.replay = replay;
     this.hasSampledReplayPose = false;
-    this.gameplayHud.setReplay(replay, hitScoreVisualizer);
-    this.gameplayHud.setEnabled(this.gameUIEnabled && !isForcedLightshowMode(this.lightshowMode));
+    this.gameplayHud?.setReplay(replay, hitScoreVisualizer);
+    this.gameplayHud?.setEnabled(this.gameUIEnabled && !isForcedLightshowMode(this.lightshowMode));
     this.clearTrails();
-    this.cameraController.reset();
+    this.cameraController?.reset();
     this.root.visible = !isForcedLightshowMode(this.lightshowMode) && this.hasPoses;
     this.applySaberOffsets();
-    this.cameraController.setReplayPresence(this.hasReplay);
+    this.cameraController?.setReplayPresence(this.hasReplay);
     this.updateHeadsetVisibility();
   }
 
   setHitScoreVisualizer(hitScoreVisualizer: HitScoreVisualizerConfig | null) {
-    this.gameplayHud.setHitScoreVisualizer(hitScoreVisualizer);
+    this.gameplayHud?.setHitScoreVisualizer(hitScoreVisualizer);
   }
 
   setHitScoresOnly(hitScoresOnly: boolean) {
-    this.gameplayHud.setHitScoresOnly(hitScoresOnly);
+    this.gameplayHud?.setHitScoresOnly(hitScoresOnly);
   }
 
   setGameUIEnabled(enabled: boolean) {
     this.gameUIEnabled = enabled;
-    this.gameplayHud.setEnabled(enabled && !isForcedLightshowMode(this.lightshowMode));
+    this.gameplayHud?.setEnabled(enabled && !isForcedLightshowMode(this.lightshowMode));
   }
 
   setHudLayout(layout: HudLayout) {
-    this.gameplayHud.setLayout(layout);
+    this.gameplayHud?.setLayout(layout);
   }
 
   setMapHasNotes(hasMapNotes: boolean) {
-    this.cameraController.setMapHasNotes(hasMapNotes);
+    this.cameraController?.setMapHasNotes(hasMapNotes);
   }
 
   setPreviewCameraDistanceOverride(distance: number | null) {
-    this.cameraController.setPreviewCameraDistanceOverride(distance);
+    this.cameraController?.setPreviewCameraDistanceOverride(distance);
   }
 
   setCameraMode(mode: ReplayCameraMode) {
-    this.cameraController.setMode(mode);
+    this.cameraController?.setMode(mode);
     this.updateHeadsetVisibility();
   }
 
   refreshTimeline() {
-    this.gameplayHud.refreshTimeline();
+    this.gameplayHud?.refreshTimeline();
     this.root.visible = !isForcedLightshowMode(this.lightshowMode) && this.hasPoses;
   }
 
   setSongDuration(duration: number | null) {
-    this.gameplayHud.setSongDuration(duration);
+    this.gameplayHud?.setSongDuration(duration);
   }
 
   setCameraSettings(settings: ReplayCameraSettings) {
     this.showHeadset = settings.showHeadset;
-    this.cameraController.setSettings(settings, isForcedLightshowMode(this.lightshowMode), this.hasReplay);
+    this.cameraController?.setSettings(settings, isForcedLightshowMode(this.lightshowMode), this.hasReplay);
     this.updateHeadsetVisibility();
   }
 
   private updateHeadsetVisibility() {
-    this.replayHeadset.root.visible =
-      this.showHeadset && (this.orthographicOverlayRendering || this.cameraController.cameraMode !== 'first-person');
+    // Neither shows in the player's own first-person view; the label goes with the headset setting
+    const visible =
+      this.showHeadset && (this.orthographicOverlayRendering || this.cameraController?.cameraMode !== 'first-person');
+    this.replayHeadset.root.visible = visible && this.playerHeadsetVisible;
+    if (this.nameLabel !== null) this.nameLabel.sprite.visible = visible && this.playerLabelVisible;
+  }
+
+  /** Hides this player's headset or name label on top of the global Show headset setting (Battle Royale). */
+  setPlayerVisibility(headset: boolean, label: boolean) {
+    this.playerHeadsetVisible = headset;
+    this.playerLabelVisible = label;
+    this.updateHeadsetVisibility();
+  }
+
+  /** Colours the headset to tell players apart, or restores it with null. */
+  setHeadsetTint(tint: Rgb | null) {
+    this.replayHeadset.setTint(tint);
+  }
+
+  /** Shows `name` above the headset with a `color` swatch, or removes the label with null. */
+  setNameLabel(label: { name: string; color: Rgb } | null) {
+    if (label === null) {
+      if (this.nameLabel === null) return;
+      this.replayHeadTrack.remove(this.nameLabel.sprite);
+      this.nameLabel.dispose();
+      this.nameLabel = null;
+      return;
+    }
+    if (this.nameLabel === null) {
+      this.nameLabel = new PlayerNameLabel();
+      this.replayHeadTrack.add(this.nameLabel.sprite);
+    }
+    this.nameLabel.setText(label.name, label.color);
+    this.updateHeadsetVisibility();
   }
 
   setOrthographicOverlayRendering(rendering: boolean) {
@@ -361,7 +405,7 @@ export class ReplayView {
   }
 
   setCameraAspect(aspect: number) {
-    this.cameraController.setAspect(aspect);
+    this.cameraController?.setAspect(aspect);
   }
 
   setColors(colors: ColorScheme) {
@@ -464,7 +508,7 @@ export class ReplayView {
     leftHanded = false,
   ) {
     if (this.replay === null) return;
-    this.gameplayHud.update(time);
+    this.gameplayHud?.update(time);
     const sample = sampleReplayFrames(this.replay.poses, time);
     if (sample === null) return;
     this.replayPlayerRoot.position.set(0, 0, 0);
@@ -484,9 +528,13 @@ export class ReplayView {
       this.noodlePlayerTransform.apply(this.replayLeftHandTrack, noodle.leftHand, leftHanded);
       this.noodlePlayerTransform.apply(this.replayRightHandTrack, noodle.rightHand, leftHanded);
     }
+    if (this.nameLabel !== null) {
+      const head = this.replayHeadset.root.position;
+      this.nameLabel.sprite.position.set(head.x, head.y + nameLabelHeight, head.z);
+    }
     this.hasSampledReplayPose = true;
     this.updateTrails(time);
-    this.cameraController.update(this.replayHeadset.root, time);
+    this.cameraController?.update(this.replayHeadset.root, time);
   }
 
   private applyTransform(target: Object3D, transform: ReplayTransform) {
@@ -645,7 +693,8 @@ export class ReplayView {
     this.customSaberLoadGeneration++;
     this.clearCustomSabers();
     this.replayHeadset.dispose();
-    this.gameplayHud.dispose();
+    this.nameLabel?.dispose();
+    this.gameplayHud?.dispose();
     for (const geometry of this.replayGeometries) geometry.dispose();
     for (const material of this.replayMaterials) material.dispose();
   }

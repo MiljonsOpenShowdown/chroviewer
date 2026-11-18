@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { Rgb } from '../../core/colors';
 import type { FogUniforms } from '../bloomfog/pipeline';
 import { createEnvironmentLitMaterial } from '../materials/environment-surface-materials';
-import type { MaterialTexture } from '../materials/shared';
+import { shaderUniformValue, type MaterialTexture } from '../materials/shared';
 
 export interface ReplaySurface {
   color: Rgb;
@@ -72,6 +72,9 @@ const HEADSET_SURFACES = new Map<string, ReplaySurface>(
     },
   }),
 );
+
+// How much of a player's tint each headset material takes (see ReplayHeadset.setTint)
+const tintScales = new Map(Object.entries({ Gray_Plastic: 1, Headset_M: 0.75, L: 1 }));
 
 export const SABER_METAL_SURFACE: ReplaySurface = {
   color: [0.05, 0.055, 0.065],
@@ -185,6 +188,7 @@ export class ReplayHeadset {
   private readonly geometries: BufferGeometry[] = [];
   private readonly materials: ShaderMaterial[] = [];
   private disposed = false;
+  private tint: Rgb | null = null;
 
   constructor(
     private readonly fog: FogUniforms,
@@ -237,7 +241,28 @@ export class ReplayHeadset {
     this.root.add(gltf.scene);
     this.geometries.push(...geometries);
     this.materials.push(...materials.values());
+    if (this.tint !== null) this.applyTint();
     this.refreshMirrorMaterials();
+  }
+
+  /** Colours the headset body, shell and accent light, e.g. to tell players apart. Null restores it. */
+  setTint(tint: Rgb | null) {
+    this.tint = tint;
+    this.applyTint();
+  }
+
+  private applyTint() {
+    const tint = this.tint;
+    for (const material of this.materials) {
+      const surface = HEADSET_SURFACES.get(material.name) ?? DEFAULT_HEADSET_SURFACE;
+      // Gray_Plastic is most of the visible body; foam, lens and strap stay dark
+      const scale = tint === null ? undefined : tintScales.get(material.name);
+      const color: Rgb =
+        tint === null || scale === undefined ? surface.color : [tint[0] * scale, tint[1] * scale, tint[2] * scale];
+      shaderUniformValue(material, '_Color')
+        ?.setRGB(...color)
+        .convertSRGBToLinear();
+    }
   }
 
   dispose() {

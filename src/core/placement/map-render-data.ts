@@ -6,6 +6,7 @@ import type { Rgb } from '../colors';
 import type { NoodleWorldRotation } from '../noodle';
 import type { NoodleObjectData } from '../noodle-data';
 import { noodleTrackControlsTime, sampleNoodleObject } from '../noodle-runtime';
+import { replayCutScore } from '../replay/scoring';
 import type { ReplayHeightEvent, ReplayNoteEvent, ReplayNoteEventType } from '../replay/types';
 import { legacyNoodleTimingObjects } from '../spawn/legacy-noodle-jump';
 import { createSpawnProvider, type SpawnState } from '../spawn/variable-njs';
@@ -161,6 +162,25 @@ export interface MapRenderOptions {
   modifiers?: string[];
 }
 
+/** What one player did with one map object, derived from the replay event type. */
+export type ReplayPlayerOutcome = 'hit' | 'badCut' | 'miss' | 'bombCut';
+
+/** One player's replay event matched to a map object (`index` points into the matching `MapRenderData` array). */
+export interface ReplayPlayerObjectResult {
+  kind: 'note' | 'bomb' | 'chainLink';
+  index: number;
+  outcome: ReplayPlayerOutcome;
+  /** Cut score of a hit (before + after + accuracy), 0 for every other outcome. */
+  score: number;
+  event: ReplayNoteEvent;
+}
+
+export interface MultiReplayMapRenderData {
+  data: MapRenderData;
+  /** One list per player, in the order the players were given, each sorted by event time. */
+  playerResults: ReplayPlayerObjectResult[][];
+}
+
 const anyCutDirection = 8;
 const chainLinkScoringTypes = new Set([5, 8]);
 const defaultPlayerHeight = 1.8;
@@ -220,7 +240,7 @@ function objectColor(customData: Difficulty['notes'][number]['customData']): Rgb
   return color === undefined ? undefined : [color[0], color[1], color[2]];
 }
 
-function mirrorCutDirection(cutDirection: number) {
+export function mirrorCutDirection(cutDirection: number) {
   if (cutDirection === 2) return 3;
   if (cutDirection === 3) return 2;
   if (cutDirection === 4) return 5;
@@ -248,7 +268,42 @@ function motionFor(state: SpawnState, beat: number, leadInBeats: number, despawn
   };
 }
 
+const replayOutcomes: Partial<Record<ReplayNoteEventType, ReplayPlayerOutcome>> = {
+  1: 'hit',
+  2: 'badCut',
+  3: 'miss',
+  4: 'bombCut',
+};
+
+function endsBefore(candidate: ReplayNoteEvent, current: ReplayNoteEvent) {
+  const candidateMissed = candidate.eventType === 3;
+  if (candidateMissed !== (current.eventType === 3)) return !candidateMissed;
+  return candidate.time < current.time;
+}
+
 export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOptions): MapRenderData {
+  return buildMapRenderDataForPlayers(difficulty, options, [options.replayNotes ?? []]).data;
+}
+
+/**
+ * Builds the map from `options` (taken from the primary replay) and matches the note events of every player to the
+ * same objects. An object ends at the earliest cut by any player (a miss only counts when nobody cut it), and
+ * `playerResults` keeps what each player did with it. `options.replayNotes` is ignored in favour of `playerNotes`.
+ * Players whose replay is left-handed must be mirrored first (see `mirrorLeftHandedReplay`).
+ */
+export function buildMultiReplayMapRenderData(
+  difficulty: Difficulty,
+  options: MapRenderOptions,
+  playerNotes: readonly (readonly ReplayNoteEvent[])[],
+): MultiReplayMapRenderData {
+  return buildMapRenderDataForPlayers(difficulty, options, playerNotes);
+}
+
+function buildMapRenderDataForPlayers(
+  difficulty: Difficulty,
+  options: MapRenderOptions,
+  playerNotes: readonly (readonly ReplayNoteEvent[])[],
+): MultiReplayMapRenderData {
   const heck = new HeckPlacement(difficulty, options.leftHanded === true);
   const provider = createSpawnProvider(
     difficulty.njsEvents,
@@ -260,7 +315,8 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
   const majorVersion = heck.majorVersion;
   const leadInBeats = preJumpTravelBeats(options.songBpm);
   const formedNotes = buildNoteFormation(difficulty, options.songBpm, heck, options.modifiers);
-  const replayNotes = [...(options.replayNotes ?? [])];
+  const remainingNotes = playerNotes.map((events) => [...events]);
+  const playerResults = playerNotes.map((): ReplayPlayerObjectResult[] => []);
   const initialPlayerHeight = options.initialPlayerHeight ?? defaultPlayerHeight;
   const replayHeights = [...(options.replayHeights ?? [])];
   const objectProviders = new Map<string, ReturnType<typeof createSpawnProvider>>();
@@ -289,10 +345,26 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
     }
     return objectProvider.stateAt(beat);
   }
-  function takeReplayEvent(matches: (event: ReplayNoteEvent) => boolean) {
-    const index = replayNotes.findIndex(matches);
-    if (index < 0) return undefined;
-    return replayNotes.splice(index, 1)[0];
+  // Takes the matching event from every player and returns the earliest cut. A miss only wins when nobody cut the
+  // object, and the lower player index wins a tie. With one player this is the first matching event.
+  function takeReplayEvent(
+    kind: ReplayPlayerObjectResult['kind'],
+    index: number,
+    matches: (event: ReplayNoteEvent) => boolean,
+  ) {
+    let earliest: ReplayNoteEvent | undefined;
+    for (const [playerIndex, events] of remainingNotes.entries()) {
+      const eventIndex = events.findIndex(matches);
+      if (eventIndex < 0) continue;
+      const event = events.splice(eventIndex, 1)[0];
+      if (event === undefined) continue;
+      const outcome = replayOutcomes[event.eventType];
+      if (outcome !== undefined) {
+        playerResults[playerIndex]?.push({ kind, index, outcome, score: replayCutScore(event)?.total ?? 0, event });
+      }
+      if (earliest === undefined || endsBefore(event, earliest)) earliest = event;
+    }
+    return earliest;
   }
 
   const notes: NoteInstance[] = [];
@@ -330,6 +402,8 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
       const replayEvent = !replayable
         ? undefined
         : takeReplayEvent(
+            'bomb',
+            bombs.length,
             (event) =>
               event.eventType === 4 &&
               approximately(event.noteId.time, noteTime) &&
@@ -357,6 +431,8 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
       const replayEvent = !replayable
         ? undefined
         : takeReplayEvent(
+            'note',
+            notes.length,
             (event) =>
               event.eventType >= 1 &&
               event.eventType <= 3 &&
@@ -457,6 +533,8 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
       const replayEvent = !replayable
         ? undefined
         : takeReplayEvent(
+            'chainLink',
+            links.length,
             (event) =>
               event.eventType >= 1 &&
               event.eventType <= 3 &&
@@ -546,7 +624,7 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
 
   propagateInitialLinkedCuts(notes, bombs, options.songBpm, difficulty.noodle);
 
-  return {
+  const data: MapRenderData = {
     notes,
     bombs,
     walls,
@@ -586,6 +664,8 @@ export function buildMapRenderData(difficulty: Difficulty, options: MapRenderOpt
     noteStartBeatOffset: options.noteStartBeatOffset,
     movementStateAt: (beat) => provider.stateAt(beat),
   };
+  for (const results of playerResults) results.sort((left, right) => left.event.time - right.event.time);
+  return { data, playerResults };
 }
 
 export function applyReplayHeightEvents(data: MapRenderData, events: ReplayHeightEvent[]) {

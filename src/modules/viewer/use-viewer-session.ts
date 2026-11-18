@@ -3,25 +3,21 @@ import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetSta
 import { useTranslations } from 'use-intl';
 
 import { songBpmTimeToSeconds } from '../../core/beatmap/bpm';
-import { difficultyRank, effectiveNoteJumpSpeed } from '../../core/beatmap/info';
+import { difficultyRank } from '../../core/beatmap/info';
 import { buildHitsoundEvents } from '../../core/clock/hitsounds';
-import { isForcedLightshowMode, type LightshowMode } from '../../core/lighting/basic-light';
+import type { LightshowMode } from '../../core/lighting/basic-light';
 import { applyReplayHeightEvents, buildMapRenderData } from '../../core/placement/map-render-data';
 import { hitScoreVisualizerForSettings } from '../../core/replay/replay-display';
 import type { ReplayHeightEvent, ReplayNoteEvent } from '../../core/replay/types';
-import {
-  colorOverride,
-  environmentForSettings,
-  saveViewerSettings,
-  type ViewerSettings,
-} from '../../core/viewer-settings';
+import { colorOverride, environmentForSettings, type ViewerSettings } from '../../core/viewer-settings';
 import { resolveEnvironmentId } from '../../renderer/environment/environment-catalog';
-import { EnvironmentLoadAborted, type EnvironmentLoadFailure } from '../../renderer/environment/environment-error';
 import type { MultiviewRendererHost } from '../../renderer/multiview-renderer-host';
 import type { RenderPerformanceOptions } from '../../renderer/render-performance';
 import type { MultiviewTimeline } from '../multiview/multiview-timeline';
+import { replayMapRenderOptions } from './replay-map-render-options';
 import type { useSongTransport } from './use-song-transport';
 import { useViewerRenderer } from './use-viewer-renderer';
+import { useViewerSettingsSync } from './use-viewer-settings-sync';
 import type { useViewerSources } from './use-viewer-sources';
 import type { ActiveSelection, DifficultyRow, ViewerPanel } from './viewer-types';
 
@@ -110,31 +106,6 @@ export function useViewerSession({
   });
 
   useEffect(() => {
-    if (!persistSettings) return;
-    saveViewerSettings(persistedSettings);
-  }, [persistSettings, persistedSettings]);
-
-  useEffect(() => {
-    viewerRef.current?.lifecycle.setRenderScale(settings.renderScale);
-  }, [settings.renderScale]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setScreenDisplacementEffects(settings.screenDisplacementEffects);
-  }, [settings.screenDisplacementEffects]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setPreviewNotesLookAtPlayer(settings.previewNotesLookAtPlayer);
-  }, [settings.previewNotesLookAtPlayer]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setPreviewHitNotes(settings.previewHitNotes);
-  }, [settings.previewHitNotes]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setPreviewHitLine(settings.previewHitLine);
-  }, [settings.previewHitLine]);
-
-  useEffect(() => {
     viewerRef.current?.view.setGameUIEnabled(!disableGameUI);
   }, [disableGameUI, viewerReady]);
 
@@ -154,131 +125,20 @@ export function useViewerSession({
     viewerRef.current?.view.setGameplayNotesVisible(!hideGameplayNotes);
   }, [hideGameplayNotes, viewerReady]);
 
-  useEffect(() => {
-    const mode: LightshowMode = authoritativeLightshowMode ?? (settings.staticLights ? 'static' : 'full');
-    if (isForcedLightshowMode(lightshowModeRef.current) && mode === 'full') return;
-    lightshowModeRef.current = mode;
-    setLightshowMode(mode);
-    viewerRef.current?.view.setLightshowMode(mode);
-  }, [authoritativeLightshowMode, settings.staticLights]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setReplayCameraSettings(settings);
-  }, [
-    settings.showHeadset,
-    settings.orthoCameraEnabled,
-    settings.orthoCameraView,
-    settings.replayCamera,
-    settings.replayCameraSmoothing,
-    settings.replayCameraSmoothingSpeed,
-    settings.replayCameraFov,
-    settings.previewCameraDistance,
-    settings.fixedCameraDistance,
-    settings.replayCameraXOffset,
-    settings.replayCameraYOffset,
-    settings.replayCameraDepthOffset,
-    settings.replayCameraXRotation,
-    settings.replayCameraYRotation,
-    settings.replayCameraZRotation,
-    settings.replayCameraForceUpright,
-  ]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setReplaySaberSettings(settings);
-  }, [
-    settings.showSabers,
-    settings.saberModel,
-    settings.saberScale,
-    settings.saberWidth,
-    settings.mosSaberBrightness,
-    settings.saberBladeLength,
-    settings.saberBladeThickness,
-    settings.saberCoreThickness,
-    settings.saberCoreInset,
-    settings.showSaberTrails,
-    settings.replayTrailStyle,
-    settings.replayTrailLength,
-    settings.replayTrailThinness,
-    settings.replayTrailSamples,
-    settings.replayTrailFade,
-    settings.replayTrailOpacity,
-    settings.replayTrailMotionThreshold,
-    settings.replayTrailSmoothing,
-    settings.saberGripLength,
-    settings.saberGripThickness,
-    settings.saberGuardSize,
-    settings.saberGuardThickness,
-    settings.saberCollarSize,
-    settings.saberCollarThickness,
-    settings.saberCollarSpacing,
-    settings.saberRingCount,
-    settings.saberRingSize,
-    settings.saberRingThickness,
-    settings.saberRingSpacing,
-    settings.saberPommelLength,
-    settings.saberPommelThickness,
-    settings.saberXOffset,
-    settings.saberYOffset,
-    settings.saberZOffset,
-    settings.saberXRotation,
-    settings.saberYRotation,
-    settings.saberZRotation,
-  ]);
-
-  useEffect(() => {
-    viewerRef.current?.view.setHitScoreVisualizer(hitScoreVisualizerForSettings(settings, sources.replayRef.current));
-  }, [settings.overrideHsvProfile, settings.preferReplayHsvProfile, settings.hsvProfile]);
-
-  useEffect(() => {
-    const active = activeSelectionRef.current;
-    const view = viewerRef.current?.view;
-    if (active === null || view === undefined) return;
-    view.refreshMapColors(colorOverride(settings, active.mapColorScheme, sources.replayRef.current?.metadata));
-  }, [
-    settings.preferReplayColors,
-    settings.preferReplayEnvironmentColors,
-    settings.customEnvironmentColors,
-    settings.customColors,
-    settings.leftColor,
-    settings.rightColor,
-    settings.obstacleColor,
-    settings.environmentLeftColor,
-    settings.environmentRightColor,
-    settings.environmentWhiteColor,
-    settings.environmentLeftBoostColor,
-    settings.environmentRightBoostColor,
-    settings.environmentWhiteBoostColor,
-  ]);
-
-  useEffect(() => {
-    const active = activeSelectionRef.current;
-    if (skipInitialMenuEnvironment && active === null) return;
-    const nextEnvironmentId = resolveEnvironmentId(
-      active === null
-        ? settings.overrideEnvironment
-          ? settings.environmentOverrideId
-          : 'BigMirrorEnvironment'
-        : environmentForSettings(
-            settings,
-            active.mapEnvironmentId,
-            active.replayEnvironmentId,
-            active.usesChromaOrNoodle,
-          ),
-    );
-    if (active?.environmentId === nextEnvironmentId) return;
-    void selectEnvironment(nextEnvironmentId);
-  }, [
-    settings.preferReplayEnvironment,
-    settings.useMapEnvironment,
-    settings.overrideEnvironment,
-    settings.environmentOverrideId,
+  const { reportEnvironmentError } = useViewerSettingsSync({
+    viewerRef,
+    activeSelectionRef,
+    replayRef: sources.replayRef,
+    lightshowModeRef,
+    authoritativeLightshowMode,
     skipInitialMenuEnvironment,
-  ]);
-
-  function reportEnvironmentError(error: EnvironmentLoadFailure) {
-    if (EnvironmentLoadAborted.is(error)) return;
-    setError(`${t('errors.failedEnvironment')}: ${error.message}`);
-  }
+    setError,
+    setLightshowMode,
+    persistedSettings,
+    settings,
+    settingsRef,
+    persistSettings,
+  });
 
   async function selectDifficulty(row: DifficultyRow, initialBeat = 0) {
     const requestId = ++selectionRequestRef.current;
@@ -312,22 +172,15 @@ export function useViewerSession({
     });
     if (requestId !== selectionRequestRef.current) return;
 
-    const data = buildMapRenderData(row.difficulty, {
-      noteJumpSpeed: effectiveNoteJumpSpeed(row.infoDifficulty),
-      noteStartBeatOffset: row.infoDifficulty.noteStartBeatOffset,
-      songBpm: sources.songBpm,
-      legacyNoodleV2Semantics: row.legacyNoodleV2Semantics,
-      recordedJumpDistance:
-        sources.replayRef.current?.metadata.hasPlaySettings === true
-          ? sources.replayRef.current.metadata.jumpDistance
-          : undefined,
-      leftHanded: sources.replayRef.current?.metadata.leftHanded,
-      replayNotes: sources.replayRef.current?.notes,
-      initialPlayerHeight: sources.replayRef.current?.metadata.initialHeight,
-      replayHeights: sources.replayRef.current?.heights,
-      environmentRemoval: row.infoDifficulty.environmentRemoval,
-      modifiers: sources.replayRef.current?.metadata.modifiers,
-    });
+    const data = buildMapRenderData(
+      row.difficulty,
+      replayMapRenderOptions(
+        row.infoDifficulty,
+        row.legacyNoodleV2Semantics,
+        sources.songBpm,
+        sources.replayRef.current,
+      ),
+    );
     const hitsoundEvents = buildHitsoundEvents([...data.notes, ...data.chainLinks], sources.songBpm);
     const replayEnd = sources.replayRef.current?.poses.at(-1)?.time ?? 0;
     const fallbackDuration = Math.max(songBpmTimeToSeconds(data.endBeat, sources.songBpm) + 1, replayEnd);
@@ -403,24 +256,6 @@ export function useViewerSession({
     setSelectedKey(row.key);
     if (requestId === selectionRequestRef.current) setDifficultyLoading(false);
     return true;
-  }
-
-  async function selectEnvironment(nextEnvironmentId: string) {
-    const viewer = viewerRef.current;
-    if (viewer === null) return;
-    setError('');
-    const active = activeSelectionRef.current;
-    const result = await viewer.view.setEnvironment(nextEnvironmentId, active?.data.chromaEnvironment);
-    if (result.isErr()) {
-      reportEnvironmentError(result.error);
-      return;
-    }
-    if (active !== null) {
-      active.environmentId = nextEnvironmentId;
-      viewer.view.refreshMapColors(
-        colorOverride(settingsRef.current, active.mapColorScheme, sources.replayRef.current?.metadata),
-      );
-    }
   }
 
   async function applyPendingView(row: DifficultyRow, beat: number | undefined, startSeconds?: number) {

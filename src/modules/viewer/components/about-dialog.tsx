@@ -69,7 +69,14 @@ export function AboutDialog({ open, showTrigger, onOpenChange }: AboutDialogProp
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       {showTrigger && (
         <Dialog.Trigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={tc('about')} title={tc('about')} aria-expanded={open}>
+          <Button
+            className="cursor-pointer"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={tc('about')}
+            title={tc('about')}
+            aria-expanded={open}
+          >
             <CircleHelp />
           </Button>
         </Dialog.Trigger>

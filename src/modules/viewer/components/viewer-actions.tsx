@@ -65,7 +65,7 @@ export function ViewerActions({
         <Popover open={shareOpen} onOpenChange={onShareOpenChange}>
           <PopoverTrigger asChild>
             <Button
-              className="max-sm:hidden"
+              className="cursor-pointer max-sm:hidden"
               variant="ghost"
               size="icon-sm"
               aria-label={tc('shareLink')}
@@ -87,6 +87,7 @@ export function ViewerActions({
         </Popover>
       )}
       <Button
+        className="cursor-pointer"
         variant="ghost"
         size="icon-sm"
         aria-label={tc('settings')}

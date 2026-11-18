@@ -19,6 +19,7 @@ import { isForcedLightshowMode, type LightshowMode } from '../../core/lighting/b
 import { defaultViewerSettings, loadViewerSettings, sanitizeViewerSettings } from '../../core/viewer-settings';
 import { environmentCatalog } from '../../renderer/environment/environment-catalog';
 import { AI_DIFFICULTY_RANKS } from '../ai/ai-map';
+import { setBrPendingFiles } from '../br/br-pending-files';
 import { useLightshowShowcase } from '../lightshow-showcase/use-lightshow-showcase';
 import { EmbeddedRealtimeScoreTimeline, isEmbeddedRealtimeScoreMessage } from '../live/embedded-realtime-score-sync';
 import { LudusPlayState } from '../live/generated/proto/scoresaber/live/v1/common_pb';
@@ -946,6 +947,21 @@ export function ViewerShell({ multiview }: ViewerShellProps = {}) {
         }}
         onSubmit={(source) => {
           sources.loadSource(source);
+        }}
+        onStartBattleRoyale={(entries) => {
+          // Files cannot go in the URL; /br picks them up from memory
+          setBrPendingFiles(entries.flatMap((entry) => (entry.kind === 'file' ? [entry.file] : [])));
+          const ids = (kind: 'scoresaber' | 'beatleader') =>
+            entries.flatMap((entry) => (entry.kind === kind ? [entry.id] : [])).join(',');
+          const urls = entries.flatMap((entry) => (entry.kind === 'url' ? [entry.url] : []));
+          void router.navigate({
+            to: '/br',
+            search: {
+              ss: ids('scoresaber') || undefined,
+              bl: ids('beatleader') || undefined,
+              replayUrl: urls.length === 0 ? undefined : urls,
+            },
+          });
         }}
       />
 

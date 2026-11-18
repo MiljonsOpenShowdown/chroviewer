@@ -21,7 +21,7 @@ import {
 
 import { Z_OFFSET } from '../../core/placement/grid';
 import type { ViewerSettings } from '../../core/viewer-settings';
-import { AFTER_SCREEN_DISPLACEMENT_LAYER } from '../mirror/planar-mirror';
+import { AFTER_SCREEN_DISPLACEMENT_LAYER, MAIN_ONLY_LAYER } from '../mirror/planar-mirror';
 
 const CAMERA_HEIGHT = 1.4;
 const CAMERA_DISTANCE = 8;
@@ -109,13 +109,16 @@ export class ReplayOrthographicOverlay {
   });
   private readonly passMesh = new Mesh(fullscreenTriangle(), this.passMaterial);
   private readonly rendererSize = new Vector2();
+  private readonly drawingBufferSize = new Vector2();
   private readonly previousViewport = new Vector4();
   private readonly previousScissor = new Vector4();
   private readonly previousClearColor = new Color();
   private view: ViewerSettings['orthoCameraView'] = 'back';
 
-  constructor() {
+  /** `fullscreen`: fills the whole canvas (renderFullscreen) instead of an inset, and also draws name labels. */
+  constructor(fullscreen = false) {
     this.camera.layers.enable(AFTER_SCREEN_DISPLACEMENT_LAYER);
+    if (fullscreen) this.camera.layers.enable(MAIN_ONLY_LAYER);
     this.passMesh.frustumCulled = false;
     this.passScene.add(this.passMesh);
     this.applyView();
@@ -125,6 +128,13 @@ export class ReplayOrthographicOverlay {
     if (view === this.view) return;
     this.view = view;
     this.applyView();
+  }
+
+  /** Scales the view around its center; 1 is the default framing, higher zooms in. */
+  setZoom(zoom: number) {
+    if (this.camera.zoom === zoom) return;
+    this.camera.zoom = zoom;
+    this.camera.updateProjectionMatrix();
   }
 
   setHalfJumpDistance(distance: number | undefined) {
@@ -174,7 +184,27 @@ export class ReplayOrthographicOverlay {
 
   render(renderer: WebGLRenderer, scene: Scene, element: HTMLElement) {
     const viewport = this.viewport(renderer, element);
-    if (viewport === null) return;
+    if (viewport !== null) this.draw(renderer, scene, viewport, false);
+  }
+
+  /** Draws over the whole canvas, sized to its drawing buffer so the view stays sharp and keeps the canvas aspect. */
+  renderFullscreen(renderer: WebGLRenderer, scene: Scene) {
+    renderer.getSize(this.rendererSize);
+    renderer.getDrawingBufferSize(this.drawingBufferSize);
+    if (this.rendererSize.x <= 0 || this.rendererSize.y <= 0) return;
+    const width = Math.max(1, Math.round(this.drawingBufferSize.x));
+    const height = Math.max(1, Math.round(this.drawingBufferSize.y));
+    if (this.target.width !== width || this.target.height !== height) {
+      this.target.setSize(width, height);
+      const aspect = width / height;
+      this.camera.left = -CAMERA_SIZE * aspect;
+      this.camera.right = CAMERA_SIZE * aspect;
+      this.camera.updateProjectionMatrix();
+    }
+    this.draw(renderer, scene, { x: 0, y: 0, width: this.rendererSize.x, height: this.rendererSize.y }, true);
+  }
+
+  private draw(renderer: WebGLRenderer, scene: Scene, viewport: OverlayViewport, clearOutput: boolean) {
     const previousTarget = renderer.getRenderTarget();
     const previousAutoClear = renderer.autoClear;
     const previousScissorTest = renderer.getScissorTest();
@@ -195,6 +225,10 @@ export class ReplayOrthographicOverlay {
       renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
       renderer.setScissor(viewport.x, viewport.y, viewport.width, viewport.height);
       renderer.setScissorTest(true);
+      if (clearOutput) {
+        renderer.setClearColor(0x000000, 1);
+        renderer.clear(true, true, true);
+      }
       renderer.render(this.passScene, this.passCamera);
     } finally {
       renderer.setRenderTarget(previousTarget);

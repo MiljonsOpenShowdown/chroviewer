@@ -9,6 +9,8 @@ import { DEFAULT_COLORS, resolveColorScheme, type ColorScheme, type Rgb } from '
 import { isForcedLightshowMode, shouldShowMapObjects, type LightshowMode } from '../core/lighting/basic-light';
 import { sampleNoodlePlayerTrack } from '../core/noodle-runtime';
 import { applyReplayHeightEvents, applyReplayNoteEvents, type MapRenderData } from '../core/placement/map-render-data';
+import type { PlayerColors } from '../core/player-colors';
+import { DEFAULT_REPLAY_PLAYER_STYLE, playerSaberSettings, type ReplayPlayerStyle } from '../core/replay-player-style';
 import type { HitScoreVisualizerConfig } from '../core/replay/hit-score-visualizer';
 import type { Replay, ReplayHeightEvent, ReplayNoteEvent } from '../core/replay/types';
 import {
@@ -45,6 +47,13 @@ import { ReplayOrthographicOverlay } from './replay/orthographic-overlay';
 import type { ReplayCameraMode } from './replay/replay-camera';
 import { ReplayView } from './replay/replay-view';
 
+/** One player of a multi-player scene (see MapView.setReplayPlayers). */
+export interface ReplayPlayerView {
+  replay: Replay;
+  name: string;
+  colors: PlayerColors;
+}
+
 function fullscreenTriangle() {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -73,7 +82,20 @@ export class MapView implements RenderView {
   private readonly mirror: PlanarMirror;
   private readonly skybox: Mesh;
   private readonly replayView: ReplayView;
+  // Multi-player scenes (setReplayPlayers): replayView shows the focused player, these render-only views the others.
+  // renderOnlyPlayers[i] is the index in `players` that renderOnlyViews[i] shows.
+  private readonly renderOnlyViews: ReplayView[] = [];
+  private renderOnlyPlayers: number[] = [];
+  private players: readonly ReplayPlayerView[] | null = null;
+  // Per-player look by index in `players` (setReplayPlayerStyles); showPlayer applies it to whichever view shows them
+  private playerStyles: readonly ReplayPlayerStyle[] = [];
+  private focusedPlayer = 0;
+  private replayCameraSettings: ReplayCameraSettings | null = null;
+  private replaySaberSettings: ReplaySaberSettings | null = null;
   private readonly replayOrthographicOverlay = new ReplayOrthographicOverlay();
+  // Battle Royale's ortho main camera (setMainOrthographic): the inset's camera, drawn over the whole canvas
+  private mainOrthographic: ReplayOrthographicOverlay | null = null;
+  private mainOrthographicZoom = 1;
   private readonly mapObjects: MapObjectRenderer;
   private readonly environmentLights = new EnvironmentLightRuntime();
   private environment: LoadedEnvironment | null = null;
@@ -264,6 +286,7 @@ export class MapView implements RenderView {
     this.environmentLights.setLightshowMode(mode);
     this.updateMapRootVisibility();
     this.replayView.setLightshowMode(mode);
+    for (const view of this.renderOnlyViews) view.setLightshowMode(mode);
     this.mapObjects.invalidate();
   }
 
@@ -275,9 +298,157 @@ export class MapView implements RenderView {
   }
 
   setReplay(replay: Replay | null, hitScoreVisualizer?: HitScoreVisualizerConfig | null) {
+    this.clearReplayPlayers();
     this.replayView.setReplay(replay, hitScoreVisualizer);
     this.baseProviders.reset();
     this.mapObjects.invalidate();
+  }
+
+  /**
+   * Shows several players on the map at once. The focused player owns the camera, the gameplay HUD and the
+   * Noodle/Chroma player tracks; the others only draw sabers, trails, headset and name label. Every replay must
+   * already be right-handed (see mirrorLeftHandedReplay). `setReplay` returns the view to a single replay.
+   */
+  setReplayPlayers(
+    players: readonly ReplayPlayerView[],
+    focusedIndex: number,
+    hitScoreVisualizer?: HitScoreVisualizerConfig | null,
+  ) {
+    this.clearReplayPlayers();
+    const focused = players[focusedIndex];
+    if (focused === undefined) {
+      this.replayView.setReplay(null);
+    } else {
+      this.players = players;
+      this.focusedPlayer = focusedIndex;
+      for (const [index, player] of players.entries()) {
+        if (index === focusedIndex) continue;
+        const view = this.createRenderOnlyView();
+        this.renderOnlyViews.push(view);
+        this.renderOnlyPlayers.push(index);
+        view.setReplay(player.replay);
+        this.showPlayer(view, index, true);
+      }
+      this.replayView.setReplay(focused.replay, hitScoreVisualizer);
+      this.showPlayer(this.replayView, focusedIndex, true);
+      this.mirror.updateMaterials(this.scene);
+    }
+    this.baseProviders.reset();
+    this.mapObjects.invalidate();
+  }
+
+  /** Moves the camera, HUD and player tracks to another player of setReplayPlayers. */
+  setFocusedPlayer(index: number, hitScoreVisualizer?: HitScoreVisualizerConfig | null) {
+    const slot = this.renderOnlyPlayers.indexOf(index);
+    const view = this.renderOnlyViews[slot];
+    const player = this.players?.[index];
+    const previous = this.players?.[this.focusedPlayer];
+    if (view === undefined || player === undefined || previous === undefined) return;
+    // Only the two swapped views reset; every other player keeps its view and trails
+    this.renderOnlyPlayers[slot] = this.focusedPlayer;
+    view.setReplay(previous.replay);
+    this.showPlayer(view, this.focusedPlayer, true);
+    this.focusedPlayer = index;
+    this.replayView.setReplay(player.replay, hitScoreVisualizer);
+    this.showPlayer(this.replayView, index, true);
+    this.baseProviders.reset();
+    this.mapObjects.invalidate();
+  }
+
+  /**
+   * Overrides colours, saber look and visibility per player of setReplayPlayers, by index. The style follows the
+   * player across setFocusedPlayer swaps; a player without one uses the global settings.
+   */
+  setReplayPlayerStyles(styles: readonly ReplayPlayerStyle[]) {
+    if (this.players === null) return;
+    this.playerStyles = styles;
+    this.showAllPlayers(true);
+  }
+
+  /** Renames the players of setReplayPlayers in place, e.g. once their profiles have loaded. */
+  setReplayPlayerNames(names: readonly string[]) {
+    if (this.players === null) return;
+    this.players = this.players.map((player, index) => ({ ...player, name: names[index] ?? player.name }));
+    this.showAllPlayers(false);
+  }
+
+  private showAllPlayers(applySabers: boolean) {
+    this.showPlayer(this.replayView, this.focusedPlayer, applySabers);
+    for (const [slot, view] of this.renderOnlyViews.entries()) {
+      const index = this.renderOnlyPlayers[slot];
+      if (index !== undefined) this.showPlayer(view, index, applySabers);
+    }
+  }
+
+  private createRenderOnlyView() {
+    const directionalLights = this.environmentLights.directionalLights;
+    const view = new ReplayView(
+      null,
+      this.pipeline.fogUniforms,
+      {
+        directions: directionalLights.directions,
+        colors: directionalLights.colors,
+        positions: directionalLights.positions,
+        radii: directionalLights.radii,
+      },
+      () => {
+        this.mirror.updateMaterials(this.scene);
+      },
+    );
+    view.setLightshowMode(this.lightshowMode);
+    if (this.replayCameraSettings !== null) view.setCameraSettings(this.replayCameraSettings);
+    if (this.replaySaberSettings !== null) view.setSaberSettings(this.replaySaberSettings);
+    view.setNoodleTrailLocalSpace(this.data?.noodle.localSpaceSaberTrail ?? false);
+    this.scene.add(view.root);
+    void view.loadHeadset();
+    return view;
+  }
+
+  private playerStyle(index: number) {
+    return this.playerStyles[index] ?? DEFAULT_REPLAY_PLAYER_STYLE;
+  }
+
+  private playerColors(index: number) {
+    return this.playerStyle(index).colors ?? this.players?.[index]?.colors;
+  }
+
+  private playerColorScheme(index: number): ColorScheme {
+    const colors = this.playerColors(index);
+    return colors === undefined ? this.colors : { ...this.colors, leftNote: colors.left, rightNote: colors.right };
+  }
+
+  private showPlayer(view: ReplayView, index: number, applySabers: boolean) {
+    const player = this.players?.[index];
+    const colors = this.playerColors(index);
+    if (player === undefined || colors === undefined) return;
+    const style = this.playerStyle(index);
+    view.setColors(this.playerColorScheme(index));
+    view.setHeadsetTint(colors.left);
+    view.setNameLabel({ name: player.name, color: colors.left });
+    view.setPlayerVisibility(style.showHeadset, style.showLabel);
+    // Saber settings rebuild the sabers and clear trails, so renames and colour changes skip them
+    if (applySabers && this.replaySaberSettings !== null) {
+      view.setSaberSettings(playerSaberSettings(this.replaySaberSettings, style));
+    }
+  }
+
+  private clearReplayPlayers() {
+    for (const view of this.renderOnlyViews) {
+      this.scene.remove(view.root);
+      view.dispose();
+    }
+    this.renderOnlyViews.length = 0;
+    this.renderOnlyPlayers = [];
+    if (this.players === null) return;
+    this.players = null;
+    this.playerStyles = [];
+    this.focusedPlayer = 0;
+    this.replayView.setColors(this.colors);
+    this.replayView.setHeadsetTint(null);
+    this.replayView.setNameLabel(null);
+    this.replayView.setPlayerVisibility(true, true);
+    if (this.replaySaberSettings !== null) this.replayView.setSaberSettings(this.replaySaberSettings);
+    this.mirror.updateMaterials(this.scene);
   }
 
   setHitScoreVisualizer(hitScoreVisualizer: HitScoreVisualizerConfig | null) {
@@ -346,10 +517,41 @@ export class MapView implements RenderView {
   setReplayCameraSettings(settings: ReplayCameraSettings) {
     this.orthoCameraEnabled = settings.orthoCameraEnabled;
     this.replayOrthographicOverlay.setView(settings.orthoCameraView);
+    this.mainOrthographic?.setView(settings.orthoCameraView);
     this.replayView.setCameraSettings(settings);
+    this.replayCameraSettings = settings;
+    for (const view of this.renderOnlyViews) view.setCameraSettings(settings);
+  }
+
+  /**
+   * Renders the whole view through the orthographic camera of the ortho inset (same angle, from orthoCameraView)
+   * instead of the replay camera; the inset is not drawn meanwhile. Off restores the normal camera.
+   */
+  setMainOrthographic(enabled: boolean) {
+    if (enabled === (this.mainOrthographic !== null)) return;
+    if (enabled) {
+      this.mainOrthographic = new ReplayOrthographicOverlay(true);
+      this.mainOrthographic.setView(this.replayCameraSettings?.orthoCameraView ?? 'back');
+      this.mainOrthographic.setZoom(this.mainOrthographicZoom);
+    } else {
+      this.mainOrthographic?.dispose();
+      this.mainOrthographic = null;
+    }
+  }
+
+  /** Zooms the ortho main camera (setMainOrthographic) around its view center; 1 is the inset's framing. */
+  setMainOrthographicZoom(zoom: number) {
+    this.mainOrthographicZoom = zoom;
+    this.mainOrthographic?.setZoom(zoom);
   }
 
   setReplaySaberSettings(settings: ReplaySaberSettings) {
+    this.replaySaberSettings = settings;
+    if (this.players !== null) {
+      // Each player merges their own saber style over these
+      this.showAllPlayers(true);
+      return;
+    }
     this.replayView.setSaberSettings(settings);
   }
 
@@ -384,12 +586,14 @@ export class MapView implements RenderView {
     this.data = data;
     this.replayView.setMapHasNotes(data.notes.length > 0);
     this.replayView.setNoodleTrailLocalSpace(data.noodle.localSpaceSaberTrail);
+    for (const view of this.renderOnlyViews) view.setNoodleTrailLocalSpace(data.noodle.localSpaceSaberTrail);
 
     const colors = this.resolveMapColors(override);
     this.colors = colors;
     this.baseProviders.reset();
     this.environmentLights.setMap(data, colors);
-    this.replayView.setColors(colors);
+    if (this.players === null) this.replayView.setColors(colors);
+    else this.showAllPlayers(false);
     this.mapObjects.setMap(data, colors);
     this.mirror.updateMaterials(this.scene);
   }
@@ -400,7 +604,8 @@ export class MapView implements RenderView {
     this.colors = colors;
     this.baseProviders.reset();
     this.environmentLights.setColors(colors);
-    this.replayView.setColors(colors);
+    if (this.players === null) this.replayView.setColors(colors);
+    else this.showAllPlayers(false);
     this.mapObjects.setColors(colors);
   }
 
@@ -413,6 +618,7 @@ export class MapView implements RenderView {
     this.data = null;
     this.replayView.setMapHasNotes(false);
     this.replayView.setNoodleTrailLocalSpace(false);
+    for (const view of this.renderOnlyViews) view.setNoodleTrailLocalSpace(false);
     this.environmentLights.clearMap();
     this.mirror.updateMaterials(this.scene);
   }
@@ -482,18 +688,17 @@ export class MapView implements RenderView {
       this.noodlePlayerTransform.apply(this.playerCameraRoot, rootTrack, data.leftHanded);
       this.noodlePlayerTransform.apply(this.playerCameraHead, headTrack, data.leftHanded);
     }
-    this.replayView.update(
-      replayTime,
-      this.replayView.hasReplay
-        ? {
-            root: rootTrack,
-            head: headTrack,
-            leftHand: sampleNoodlePlayerTrack(data.noodle, 'LeftHand', now, this.baseProviders, data.leftHanded),
-            rightHand: sampleNoodlePlayerTrack(data.noodle, 'RightHand', now, this.baseProviders, data.leftHanded),
-          }
-        : undefined,
-      data.leftHanded,
-    );
+    const noodle = this.replayView.hasReplay
+      ? {
+          root: rootTrack,
+          head: headTrack,
+          leftHand: sampleNoodlePlayerTrack(data.noodle, 'LeftHand', now, this.baseProviders, data.leftHanded),
+          rightHand: sampleNoodlePlayerTrack(data.noodle, 'RightHand', now, this.baseProviders, data.leftHanded),
+        }
+      : undefined;
+    this.replayView.update(replayTime, noodle, data.leftHanded);
+    // Every player follows the same player tracks, sampled once above
+    for (const view of this.renderOnlyViews) view.update(replayTime, noodle, data.leftHanded);
     this.mapObjects.update(now, this.replayView, this.baseProviders);
   }
 
@@ -518,6 +723,18 @@ export class MapView implements RenderView {
     if (this.environment?.applyConstraints() === true) this.scene.updateMatrixWorld();
     this.environment?.syncInstancedMeshes();
     if (this.environment !== null) this.environmentLights.updateWorldLights(now);
+    const mainOrthographic = this.mainOrthographic;
+    if (
+      mainOrthographic !== null &&
+      output === undefined &&
+      this.replayView.hasReplay &&
+      !isForcedLightshowMode(this.lightshowMode)
+    ) {
+      this.renderOrthographic(now, (scene) => {
+        mainOrthographic.renderFullscreen(renderer, scene);
+      });
+      return;
+    }
     if (hasVisibleMirrorConsumer(this.environmentMirrorConsumers, this.camera)) {
       this.mirror.render(renderer, this.scene, this.camera, (mirrorRenderer, mirrorCamera) => {
         this.pipeline.render(mirrorRenderer, mirrorCamera, this.environmentLights.lightSegments);
@@ -533,11 +750,16 @@ export class MapView implements RenderView {
     );
     if (this.orthoCameraEnabled && this.replayView.hasReplay && !isForcedLightshowMode(this.lightshowMode)) {
       const element = this.orthoOverlayElement();
-      if (element !== null) this.renderOrthographicOverlay(renderer, element, now);
+      if (element !== null) {
+        this.renderOrthographic(now, (scene) => {
+          this.replayOrthographicOverlay.render(renderer, scene, element);
+        });
+      }
     }
   }
 
-  private renderOrthographicOverlay(renderer: WebGLRenderer, element: HTMLElement, beat: number) {
+  // Shows the scene the way the orthographic camera draws it (no environment, sky, mirror, HUD or fog) during `draw`
+  private renderOrthographic(beat: number, draw: (scene: Scene) => void) {
     const environmentRoot = this.environment?.root;
     const environmentVisible = environmentRoot?.visible ?? false;
     const skyboxVisible = this.skybox.visible;
@@ -558,8 +780,10 @@ export class MapView implements RenderView {
       fog._CustomFogHeightFogHeight.value = 1;
       fog._CustomFogHeightFogStartY.value = -1_000_000;
       if (this.screenDisplacementEffects) this.mapObjects.setScreenDisplacementEffects(false);
-      this.replayOrthographicOverlay.setHalfJumpDistance(this.data?.movementStateAt?.(beat).halfJumpDistance);
-      this.replayOrthographicOverlay.render(renderer, this.scene, element);
+      const halfJumpDistance = this.data?.movementStateAt?.(beat).halfJumpDistance;
+      this.replayOrthographicOverlay.setHalfJumpDistance(halfJumpDistance);
+      this.mainOrthographic?.setHalfJumpDistance(halfJumpDistance);
+      draw(this.scene);
     } finally {
       if (this.screenDisplacementEffects) this.mapObjects.setScreenDisplacementEffects(true);
       fog._CustomFogAttenuation.value = fogAttenuation;
@@ -590,8 +814,10 @@ export class MapView implements RenderView {
       this.environment.dispose();
     }
     this.mapObjects.dispose();
+    this.clearReplayPlayers();
     this.replayView.dispose();
     this.replayOrthographicOverlay.dispose();
+    this.mainOrthographic?.dispose();
     for (const object of [this.skybox, this.mirror.mesh]) {
       if (!Array.isArray(object.material)) object.material.dispose();
     }

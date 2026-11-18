@@ -6,25 +6,20 @@ import { Result } from 'better-result';
 import { useTranslations } from 'use-intl';
 
 import { isBeatLeaderReplay } from '../../core/replay/parse-beatleader';
-import { applyLegacyScoreSaberMetadata, isScoreSaberReplay } from '../../core/replay/parse-scoresaber';
+import { isScoreSaberReplay } from '../../core/replay/parse-scoresaber';
 import type { Replay } from '../../core/replay/types';
-import { replayMapHash } from '../../core/replay/types';
 import { applySharedViewerSettings } from '../../core/share-link';
 import type { ViewerSettings } from '../../core/viewer-settings';
 import { extractMapArchive } from '../../sources/archive';
 import {
   beatLeaderReference,
   fetchBeatLeaderLeaderboards,
-  fetchBeatLeaderReplayFile,
-  fetchBeatLeaderReplayMetadata,
   fetchTopBeatLeaderScore,
 } from '../../sources/beatleader/provider';
 import { fetchBeatSaverHash, fetchBeatSaverMap } from '../../sources/beatsaver/provider';
 import { requestArrayBuffer } from '../../sources/http';
 import {
   fetchScoreSaberLeaderboards,
-  fetchScoreSaberReplayFile,
-  fetchScoreSaberReplayMetadata,
   fetchTopScoreSaberScore,
   lookupScoreSaber,
   scoreSaberReference,
@@ -39,6 +34,13 @@ import type {
   ScoreSaberLeaderboard,
   SourceResult,
 } from '../../sources/source-types';
+import {
+  loadBeatLeaderReplay,
+  loadReplayData,
+  loadReplayUrl,
+  loadScoreSaberReplay,
+  sourceDownloadUrl,
+} from './replay-loaders';
 import { sourceErrorMessage } from './source-error-message';
 import type { LoadedSourceContext, PendingSharedView } from './use-viewer-file-source';
 import { isRemoteSourceUrl } from './viewer-search';
@@ -65,10 +67,6 @@ type RemoteSourceCommand = { requestId: number } & (
 export interface SourceDownload {
   kind: ViewerSource | 'replay';
   progress: DownloadProgress;
-}
-
-function sourceDownloadUrl(value: string) {
-  return new URL(value).protocol === 'https:' ? `/api/source?${new URLSearchParams({ url: value }).toString()}` : value;
 }
 
 interface UseViewerRemoteSourceOptions {
@@ -143,60 +141,38 @@ export function useViewerRemoteSource({
     });
   }
 
+  function replayLoadOptions(requestId: number) {
+    return {
+      messages: {
+        beatleaderReplayMapMismatch: t('errors.beatleaderReplayMapMismatch'),
+        replayDifficultyMismatch: t('errors.replayDifficultyMismatch'),
+        replayMapMismatch: t('errors.replayMapMismatch'),
+        replayMissingHash: t('errors.replayMissingHash'),
+        sourceDisabled: t('errors.sourceDisabled'),
+      },
+      parseReplay,
+      withMap: true as const,
+      isCurrent: () => isSourceRequestCurrent(requestId),
+      onDownload: (kind: SourceDownload['kind'], progress: DownloadProgress) => {
+        if (isSourceRequestCurrent(requestId)) setSourceDownload({ kind, progress });
+      },
+    };
+  }
+
   async function loadScoreSaberScore(
     requestId: number,
     scoreId: string,
     pending: { beat?: number; autoplay?: boolean } = {},
   ) {
-    if (!isViewerSourceEnabled('scoresaber')) return disabledSource('scoresaber');
     return Result.gen(async function* () {
-      const metadataPromise = fetchScoreSaberReplayMetadata(scoreId, downloadOptions('scoresaber', requestId));
-      const initialReplayPromise = fetchScoreSaberReplayFile(scoreId, downloadOptions('scoresaber', requestId));
-      const source = yield* Result.await(metadataPromise);
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      const replayFilePromise =
-        source.scoreId === scoreId
-          ? initialReplayPromise
-          : fetchScoreSaberReplayFile(source.scoreId, downloadOptions('scoresaber', requestId));
-      const [replayResult, mapResult] = await Promise.all([
-        replayFilePromise.then((result) =>
-          result.isErr() ? Result.err(result.error) : parseReplay(result.value, 'scoresaber'),
-        ),
-        fetchBeatSaverHash(source.hash, downloadOptions('beatsaver', requestId)),
-      ]);
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      const replay = yield* replayResult;
-      const map = yield* mapResult;
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      applyLegacyScoreSaberMetadata(replay, source);
-      const replayHash = replayMapHash(replay);
-      if (replayHash?.toLowerCase() !== source.hash.toLowerCase()) {
-        return Result.err(
-          new SourceError({
-            message: t('errors.replayMapMismatch'),
-            source: 'scoresaber',
-            operation: 'validate-replay-map',
-          }),
-        );
-      }
-      if (
-        replay.metadata.difficulty !== source.difficulty ||
-        replay.metadata.characteristic.toLowerCase() !== source.characteristic.toLowerCase()
-      ) {
-        return Result.err(
-          new SourceError({
-            message: t('errors.replayDifficultyMismatch'),
-            source: 'scoresaber',
-            operation: 'validate-replay-difficulty',
-          }),
-        );
-      }
+      const loaded = yield* Result.await(loadScoreSaberReplay(scoreId, replayLoadOptions(requestId)));
+      if (loaded === null) return Result.ok(undefined);
       pendingSharedViewRef.current = pending;
       yield* Result.await(
-        loadSourceFiles(requestId, map.files, replay, {
-          identity: { key: map.key, hash: map.hash },
-          scoreId: source.scoreId,
-          player: source.player,
+        loadSourceFiles(requestId, loaded.map.files, loaded.replay, {
+          identity: { key: loaded.map.key, hash: loaded.map.hash },
+          scoreId: loaded.scoreId,
+          player: loaded.player,
         }),
       );
       return Result.ok(undefined);
@@ -208,71 +184,34 @@ export function useViewerRemoteSource({
     scoreId: string,
     pending: { beat?: number; autoplay?: boolean } = {},
   ) {
-    if (!isViewerSourceEnabled('beatleader')) return disabledSource('beatleader');
     return Result.gen(async function* () {
-      const metadataPromise = fetchBeatLeaderReplayMetadata(scoreId, downloadOptions('beatleader', requestId));
-      const source = yield* Result.await(metadataPromise);
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      const replayFilePromise = fetchBeatLeaderReplayFile(source.replayUrl, downloadOptions('beatleader', requestId));
-      const [replayResult, mapResult] = await Promise.all([
-        replayFilePromise.then((result) =>
-          result.isErr() ? Result.err(result.error) : parseReplay(result.value, 'beatleader'),
-        ),
-        fetchBeatSaverHash(source.hash, downloadOptions('beatsaver', requestId)),
-      ]);
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      const replay = yield* replayResult;
-      const map = yield* mapResult;
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-
-      const replayHash = replayMapHash(replay);
-      if (replayHash?.toLowerCase() !== source.hash.toLowerCase()) {
-        return Result.err(
-          new SourceError({
-            message: t('errors.beatleaderReplayMapMismatch'),
-            source: 'beatleader',
-            operation: 'validate-replay-map',
-          }),
-        );
-      }
-
+      const loaded = yield* Result.await(loadBeatLeaderReplay(scoreId, replayLoadOptions(requestId)));
+      if (loaded === null) return Result.ok(undefined);
       pendingSharedViewRef.current = pending;
       yield* Result.await(
-        loadSourceFiles(requestId, map.files, replay, {
-          identity: { key: map.key, hash: map.hash },
-          scoreIdBL: source.scoreId,
-          player: source.player,
+        loadSourceFiles(requestId, loaded.map.files, loaded.replay, {
+          identity: { key: loaded.map.key, hash: loaded.map.hash },
+          scoreIdBL: loaded.scoreId,
+          player: loaded.player,
         }),
       );
       return Result.ok(undefined);
     });
   }
 
-  async function loadReplayData(
+  async function loadReplayWithMap(
     requestId: number,
-    data: ArrayBuffer,
-    pending: { beat?: number; autoplay?: boolean } = {},
-    sourceLink?: ViewerSourceLink,
+    loadReplay: (options: ReturnType<typeof replayLoadOptions>) => ReturnType<typeof loadReplayData<true>>,
+    pending: { beat?: number; autoplay?: boolean },
+    sourceLink: ViewerSourceLink,
   ) {
     return Result.gen(async function* () {
-      const replay = yield* Result.await(parseReplay(data));
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      const hash = replayMapHash(replay);
-      if (hash === null) {
-        return Result.err(
-          new SourceError({
-            message: t('errors.replayMissingHash'),
-            source: 'local',
-            operation: 'validate-replay-map',
-          }),
-        );
-      }
-      const map = yield* Result.await(fetchBeatSaverHash(hash, downloadOptions('beatsaver', requestId)));
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
+      const loaded = yield* Result.await(loadReplay(replayLoadOptions(requestId)));
+      if (loaded === null) return Result.ok(undefined);
       pendingSharedViewRef.current = pending;
       yield* Result.await(
-        loadSourceFiles(requestId, map.files, replay, {
-          identity: { key: map.key, hash: map.hash },
+        loadSourceFiles(requestId, loaded.map.files, loaded.replay, {
+          identity: { key: loaded.map.key, hash: loaded.map.hash },
           sourceLink,
         }),
       );
@@ -280,23 +219,14 @@ export function useViewerRemoteSource({
     });
   }
 
-  async function loadReplayUrl(
+  async function loadReplayUrlSource(
     requestId: number,
     replayUrl: string,
     pending: { beat?: number; autoplay?: boolean } = {},
   ) {
-    return Result.gen(async function* () {
-      const data = yield* Result.await(
-        requestArrayBuffer(sourceDownloadUrl(replayUrl), {
-          source: 'local',
-          label: 'Replay',
-          operation: 'download-replay',
-          ...downloadOptions('replay', requestId),
-        }),
-      );
-      if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
-      yield* Result.await(loadReplayData(requestId, data, pending, { type: 'replay', url: replayUrl }));
-      return Result.ok(undefined);
+    return loadReplayWithMap(requestId, (options) => loadReplayUrl(replayUrl, options), pending, {
+      type: 'replay',
+      url: replayUrl,
     });
   }
 
@@ -417,7 +347,14 @@ export function useViewerRemoteSource({
       if (!isSourceRequestCurrent(requestId)) return Result.ok(undefined);
       const bytes = new Uint8Array(data);
       if (isScoreSaberReplay(bytes) || isBeatLeaderReplay(bytes)) {
-        yield* Result.await(loadReplayData(requestId, data, {}, { type: 'replay', url: linkUrl }));
+        yield* Result.await(
+          loadReplayWithMap(
+            requestId,
+            (options) => loadReplayData(data, options),
+            {},
+            { type: 'replay', url: linkUrl },
+          ),
+        );
         if (isSourceRequestCurrent(requestId)) {
           await navigate({ to: '/', search: { replayUrl: linkUrl }, replace: true });
         }
@@ -510,7 +447,7 @@ export function useViewerRemoteSource({
       case 'shared-preview':
         return loadSharedPreview(command.requestId, command);
       case 'shared-replay':
-        return loadReplayUrl(command.requestId, command.replayUrl, {
+        return loadReplayUrlSource(command.requestId, command.replayUrl, {
           beat: command.beat,
           autoplay: command.autoplay,
         });

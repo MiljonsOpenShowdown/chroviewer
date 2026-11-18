@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { useTranslations } from 'use-intl';
 
@@ -9,7 +9,7 @@ import { GeneralSettings } from './general-settings';
 import { GraphicsSettings } from './graphics-settings';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import logoUrl from '@/app/assets/logo.svg?url';
 
@@ -21,6 +21,8 @@ interface SettingsDrawerProps {
   isMapPreview: boolean;
   onChange: (settings: ViewerSettings) => void;
   onClose: () => void;
+  /** Content of an extra "BR" tab, shown only when given (Battle Royale pages). */
+  brTab?: ReactNode;
 }
 
 export function SettingsDrawer({
@@ -31,6 +33,7 @@ export function SettingsDrawer({
   isMapPreview,
   onChange,
   onClose,
+  brTab,
 }: SettingsDrawerProps) {
   const t = useTranslations('settings');
   const tc = useTranslations('common');
@@ -67,6 +70,11 @@ export function SettingsDrawer({
               <TabsTrigger value="graphics">{tc('graphics')}</TabsTrigger>
               <TabsTrigger value="camera">{tc('camera')}</TabsTrigger>
               <TabsTrigger value="cosmetics">{tc('cosmetics')}</TabsTrigger>
+              {brTab !== undefined && (
+                <TabsTrigger className="cursor-pointer" value="br">
+                  {tc('br')}
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
           <GeneralSettings
@@ -78,6 +86,11 @@ export function SettingsDrawer({
           <GraphicsSettings settings={settings} onChange={onChange} />
           <CameraSettings settings={settings} hasReplay={hasReplay} onChange={onChange} />
           <CosmeticsSettings settings={settings} environments={environments} onChange={onChange} />
+          {brTab !== undefined && (
+            <TabsContent value="br" className="min-h-0 overflow-y-auto data-[state=inactive]:hidden">
+              {brTab}
+            </TabsContent>
+          )}
         </Tabs>
       </SheetContent>
     </Sheet>

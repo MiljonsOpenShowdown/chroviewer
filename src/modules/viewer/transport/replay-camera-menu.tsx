@@ -12,6 +12,8 @@ interface ReplayCameraMenuProps {
   open: boolean;
   camera: ViewerSettings['replayCamera'];
   orthoCameraEnabled: boolean;
+  /** Adds an "Ortho" main camera entry; it is shown as selected while enabled. */
+  mainOrtho?: { enabled: boolean; onChange: (enabled: boolean) => void };
   onOpenChange: (open: boolean) => void;
   onHoverChange: (hovered: boolean) => void;
   onCameraChange: (camera: ViewerSettings['replayCamera']) => void;
@@ -22,6 +24,7 @@ export function ReplayCameraMenu({
   open,
   camera,
   orthoCameraEnabled,
+  mainOrtho,
   onOpenChange,
   onHoverChange,
   onCameraChange,
@@ -36,7 +39,11 @@ export function ReplayCameraMenu({
       case 'static':
       case 'follow':
       case 'first-person':
+        if (mainOrtho?.enabled === true) mainOrtho.onChange(false);
         onCameraChange(value);
+        break;
+      case 'ortho':
+        mainOrtho?.onChange(true);
     }
   }
 
@@ -66,7 +73,7 @@ export function ReplayCameraMenu({
         className="flex w-full flex-col"
         type="single"
         orientation="vertical"
-        value={camera}
+        value={mainOrtho?.enabled === true ? 'ortho' : camera}
         aria-label={t('replayCamera')}
         onValueChange={selectCamera}
       >
@@ -79,6 +86,11 @@ export function ReplayCameraMenu({
         <ToggleGroupItem className="w-full" value="first-person">
           {tc('firstPerson')}
         </ToggleGroupItem>
+        {mainOrtho !== undefined && (
+          <ToggleGroupItem className="w-full cursor-pointer" value="ortho">
+            {tc('ortho')}
+          </ToggleGroupItem>
+        )}
       </ToggleGroup>
     </TransportMenu>
   );

@@ -60,6 +60,8 @@ interface TransportControlsProps {
   lightshowReadOnly: boolean;
   replayCamera: ViewerSettings['replayCamera'];
   orthoCameraEnabled: boolean;
+  /** Set only on pages with an ortho main camera (Battle Royale); adds "Ortho" to the camera menu. */
+  mainOrtho?: { enabled: boolean; onChange: (enabled: boolean) => void };
   hasReplay: boolean;
   songMuted: boolean;
   masterMuted: boolean;
@@ -107,6 +109,7 @@ export function TransportControls({
   lightshowReadOnly,
   replayCamera,
   orthoCameraEnabled,
+  mainOrtho,
   hasReplay,
   songMuted,
   masterMuted,
@@ -294,6 +297,7 @@ export function TransportControls({
           open={panel === 'camera'}
           camera={replayCamera}
           orthoCameraEnabled={orthoCameraEnabled}
+          mainOrtho={mainOrtho}
           onOpenChange={(open) => {
             onPanelOpenChange('camera', open);
           }}

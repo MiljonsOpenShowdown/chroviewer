@@ -134,6 +134,8 @@ const searchKeyAliases = new Map(
     watcherplayerid: 'watcherPlayerId',
     authtoken: 'authToken',
     syncgroup: 'syncGroup',
+    ss: 'ss',
+    bl: 'bl',
   }),
 );
 
@@ -150,6 +152,8 @@ const stringSearchAliases = {
   watcherPlayerId: ['watcherplayerid'],
   authToken: ['authtoken'],
   syncGroup: ['syncgroup'],
+  ss: ['ss'],
+  bl: ['bl'],
   catchupUrl: ['catchupurl'],
   liveUrl: ['liveurl'],
   showcaseConfig: ['showcaseconfig'],
@@ -173,6 +177,9 @@ export function parseUrlSearch(search: string) {
     const entry = [...searchParams].find(([key]) => aliases.includes(key.toLowerCase()));
     if (entry !== undefined) parsed[canonical] = entry[1];
   }
+  // /br takes several replay URLs; the loop above keeps only the first one in replayUrl
+  const replayUrls = [...searchParams].filter(([key]) => key.toLowerCase() === 'replayurl').map(([, value]) => value);
+  if (replayUrls.length > 1) parsed.replayUrls = replayUrls;
   const nestedSettings: Record<string, RouterSearchValue> =
     typeof parsed.settings === 'object' && parsed.settings !== null && !Array.isArray(parsed.settings)
       ? { ...parsed.settings }
