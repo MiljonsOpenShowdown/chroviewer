@@ -40,6 +40,7 @@ import { PostBloomPipeline } from './post-bloom/pipeline';
 import { DEFAULT_QUALITY } from './quality';
 import { DEFAULT_RENDER_PERFORMANCE, type RenderPerformanceOptions } from './render-performance';
 import type { RenderView } from './renderer-lifecycle';
+import { hudLayoutFor } from './replay/hud/hud-layouts';
 import { ReplayOrthographicOverlay } from './replay/orthographic-overlay';
 import type { ReplayCameraMode } from './replay/replay-camera';
 import { ReplayView } from './replay/replay-view';
@@ -231,6 +232,7 @@ export class MapView implements RenderView {
     this.environmentMirrorConsumers = collectMirrorConsumers(environment.root);
     this.scene.add(environment.root);
     this.environmentLights.setEnvironment(environment);
+    this.replayView.setHudLayout(hudLayoutFor(id));
     this.mirror.updateMaterials(this.scene);
     this.pipeline.setFogParams(environment.data.fogParams);
     const hasCustomEnvironment =

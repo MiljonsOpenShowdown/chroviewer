@@ -42,6 +42,7 @@ import {
   type CustomSaberInstance,
 } from './custom-saber';
 import { ReplayGameplayHud } from './hud/gameplay-hud';
+import type { HudLayout } from './hud/hud-layouts';
 import { ReplayCameraController, type ReplayCameraMode } from './replay-camera';
 import {
   createReplaySurfaceMaterial,
@@ -289,6 +290,10 @@ export class ReplayView {
   setGameUIEnabled(enabled: boolean) {
     this.gameUIEnabled = enabled;
     this.gameplayHud.setEnabled(enabled && !isForcedLightshowMode(this.lightshowMode));
+  }
+
+  setHudLayout(layout: HudLayout) {
+    this.gameplayHud.setLayout(layout);
   }
 
   setMapHasNotes(hasMapNotes: boolean) {

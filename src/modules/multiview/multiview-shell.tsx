@@ -254,7 +254,7 @@ export function MultiviewShell({ Tile, playerDefaults }: MultiviewShellProps) {
         for (const hash of preload.slice(0, 4)) {
           if (typeof hash !== 'string' || !/^[0-9a-f]{40}$/i.test(hash)) continue;
           const key = hash.toUpperCase();
-          if (!mapCache.has(key)) void mapCache.getOrLoad(key, () => fetchBeatSaverHash(key));
+          if (!mapCache.has(key) && !mapCache.recentlyFailed(key)) void mapCache.getOrLoad(key, () => fetchBeatSaverHash(key));
         }
       }
       // Scores update continuously. Keep them in the timeline without turning
