@@ -73,7 +73,19 @@ export const viewerSearchSchema = z.pipe(
   z.object({
     party: z.catch(z.optional(livePlayerIdSchema), undefined),
     map: z.catch(z.optional(mapSourceSchema), undefined),
-    replayUrl: z.catch(z.optional(remoteSourceUrlSchema), undefined),
+    // A repeated replayUrl (Battle Royale links) parses as an array; this viewer plays the first
+    replayUrl: z.catch(
+      z.optional(
+        z.pipe(
+          z.pipe(
+            z.union([z.string(), z.array(z.string())]),
+            z.transform((value) => (Array.isArray(value) ? value[0] : value)),
+          ),
+          remoteSourceUrlSchema,
+        ),
+      ),
+      undefined,
+    ),
     scoreId: z.catch(z.optional(scoreIdSchema), undefined),
     scoreIdBL: z.catch(z.optional(scoreIdSchema), undefined),
     difficulty: z.catch(z.optional(difficultyIndexSchema), undefined),

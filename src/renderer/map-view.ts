@@ -96,6 +96,7 @@ export class MapView implements RenderView {
   // Battle Royale's ortho main camera (setMainOrthographic): the inset's camera, drawn over the whole canvas
   private mainOrthographic: ReplayOrthographicOverlay | null = null;
   private mainOrthographicZoom = 1;
+  private mainOrthographicView: ReplayCameraSettings['orthoCameraView'] = 'back';
   private readonly mapObjects: MapObjectRenderer;
   private readonly environmentLights = new EnvironmentLightRuntime();
   private environment: LoadedEnvironment | null = null;
@@ -426,6 +427,7 @@ export class MapView implements RenderView {
     view.setHeadsetTint(colors.left);
     view.setNameLabel({ name: player.name, color: colors.left });
     view.setPlayerVisibility(style.showHeadset, style.showLabel);
+    view.setSaberOpacity(style.saberOpacity);
     // Saber settings rebuild the sabers and clear trails, so renames and colour changes skip them
     if (applySabers && this.replaySaberSettings !== null) {
       view.setSaberSettings(playerSaberSettings(this.replaySaberSettings, style));
@@ -447,6 +449,7 @@ export class MapView implements RenderView {
     this.replayView.setHeadsetTint(null);
     this.replayView.setNameLabel(null);
     this.replayView.setPlayerVisibility(true, true);
+    this.replayView.setSaberOpacity(1);
     if (this.replaySaberSettings !== null) this.replayView.setSaberSettings(this.replaySaberSettings);
     this.mirror.updateMaterials(this.scene);
   }
@@ -517,26 +520,32 @@ export class MapView implements RenderView {
   setReplayCameraSettings(settings: ReplayCameraSettings) {
     this.orthoCameraEnabled = settings.orthoCameraEnabled;
     this.replayOrthographicOverlay.setView(settings.orthoCameraView);
-    this.mainOrthographic?.setView(settings.orthoCameraView);
     this.replayView.setCameraSettings(settings);
     this.replayCameraSettings = settings;
     for (const view of this.renderOnlyViews) view.setCameraSettings(settings);
   }
 
   /**
-   * Renders the whole view through the orthographic camera of the ortho inset (same angle, from orthoCameraView)
-   * instead of the replay camera; the inset is not drawn meanwhile. Off restores the normal camera.
+   * Renders the whole view through an orthographic camera like the ortho inset's, at its own angle
+   * (setMainOrthographicView), instead of the replay camera; the inset is not drawn meanwhile. Off restores the normal
+   * camera.
    */
   setMainOrthographic(enabled: boolean) {
     if (enabled === (this.mainOrthographic !== null)) return;
     if (enabled) {
       this.mainOrthographic = new ReplayOrthographicOverlay(true);
-      this.mainOrthographic.setView(this.replayCameraSettings?.orthoCameraView ?? 'back');
+      this.mainOrthographic.setView(this.mainOrthographicView);
       this.mainOrthographic.setZoom(this.mainOrthographicZoom);
     } else {
       this.mainOrthographic?.dispose();
       this.mainOrthographic = null;
     }
+  }
+
+  /** Angle of the ortho main camera (setMainOrthographic), apart from the inset's orthoCameraView. */
+  setMainOrthographicView(view: ReplayCameraSettings['orthoCameraView']) {
+    this.mainOrthographicView = view;
+    this.mainOrthographic?.setView(view);
   }
 
   /** Zooms the ortho main camera (setMainOrthographic) around its view center; 1 is the inset's framing. */
@@ -730,7 +739,7 @@ export class MapView implements RenderView {
       this.replayView.hasReplay &&
       !isForcedLightshowMode(this.lightshowMode)
     ) {
-      this.renderOrthographic(now, (scene) => {
+      this.renderOrthographic(now, false, (scene) => {
         mainOrthographic.renderFullscreen(renderer, scene);
       });
       return;
@@ -751,15 +760,18 @@ export class MapView implements RenderView {
     if (this.orthoCameraEnabled && this.replayView.hasReplay && !isForcedLightshowMode(this.lightshowMode)) {
       const element = this.orthoOverlayElement();
       if (element !== null) {
-        this.renderOrthographic(now, (scene) => {
+        // From the side, players are told apart by their headsets, so the inset always draws them
+        const sideView = (this.replayCameraSettings?.orthoCameraView ?? 'back') !== 'back';
+        this.renderOrthographic(now, sideView, (scene) => {
           this.replayOrthographicOverlay.render(renderer, scene, element);
         });
       }
     }
   }
 
-  // Shows the scene the way the orthographic camera draws it (no environment, sky, mirror, HUD or fog) during `draw`
-  private renderOrthographic(beat: number, draw: (scene: Scene) => void) {
+  // Shows the scene the way the orthographic camera draws it (no environment, sky, mirror, HUD or fog) during `draw`;
+  // `forceHeadsets` draws every player's headset whatever the Show headset settings
+  private renderOrthographic(beat: number, forceHeadsets: boolean, draw: (scene: Scene) => void) {
     const environmentRoot = this.environment?.root;
     const environmentVisible = environmentRoot?.visible ?? false;
     const skyboxVisible = this.skybox.visible;
@@ -775,7 +787,8 @@ export class MapView implements RenderView {
       this.skybox.visible = false;
       this.mirror.mesh.visible = false;
       this.replayView.hudRoot.visible = false;
-      this.replayView.setOrthographicOverlayRendering(true);
+      this.replayView.setOrthographicOverlayRendering(true, forceHeadsets);
+      for (const view of this.renderOnlyViews) view.setOrthographicOverlayRendering(true, forceHeadsets);
       fog._CustomFogAttenuation.value = 0;
       fog._CustomFogHeightFogHeight.value = 1;
       fog._CustomFogHeightFogStartY.value = -1_000_000;
@@ -790,6 +803,7 @@ export class MapView implements RenderView {
       fog._CustomFogHeightFogHeight.value = fogHeight;
       fog._CustomFogHeightFogStartY.value = fogStartY;
       this.replayView.setOrthographicOverlayRendering(false);
+      for (const view of this.renderOnlyViews) view.setOrthographicOverlayRendering(false);
       this.replayView.hudRoot.visible = hudVisible;
       this.mirror.mesh.visible = mirrorVisible;
       this.skybox.visible = skyboxVisible;

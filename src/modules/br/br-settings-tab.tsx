@@ -10,6 +10,7 @@ import { SliderSetting } from '../settings/components/slider-setting';
 import { SaberSettingsControls } from '../settings/saber-settings-controls';
 import {
   BR_ORTHO_ZOOM,
+  brSaberSettings,
   DEFAULT_BR_PLAYER_OVERRIDES,
   MAX_BR_NAME_LENGTH,
   rgbToHex,
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 interface BrSettingsPlayer {
   /** brPlayerKey */
@@ -44,12 +46,16 @@ type ColorKey = 'leftColor' | 'rightColor';
 type VisibilityKey = 'showSabers' | 'showTrails' | 'showHeadset' | 'showLabel';
 
 const visibilityKeys: VisibilityKey[] = ['showSabers', 'showTrails', 'showHeadset', 'showLabel'];
+const orthoViews = ['left', 'back', 'right'] as const;
+const orthoViewLabels = { left: 'leftView', back: 'backView', right: 'rightView' } as const;
 
-/** The Battle Royale tab of the settings drawer: ortho zoom and per-player overrides. */
+/** The Battle Royale tab of the settings drawer: ortho main camera, HUD and per-player overrides. */
 export function BrSettingsTab({ players, settings, sabers, onChange }: BrSettingsTabProps) {
   const format = useFormatter();
   const t = useTranslations('br.settings');
   const ts = useTranslations('settings');
+  const tc = useTranslations('settings.camera');
+  const brSabers = brSaberSettings(sabers);
 
   function updatePlayer(key: string, patch: Partial<BrPlayerOverrides>) {
     const current = settings.players[key] ?? DEFAULT_BR_PLAYER_OVERRIDES;
@@ -72,6 +78,35 @@ export function BrSettingsTab({ players, settings, sabers, onChange }: BrSetting
           onChange({ ...settings, orthoZoom });
         }}
       />
+      <div className="flex flex-col gap-2">
+        <p className="text-sm">{t('orthoView')}</p>
+        <ToggleGroup
+          className="grid w-full grid-cols-3"
+          type="single"
+          value={settings.orthoView}
+          aria-label={t('orthoView')}
+          onValueChange={(value) => {
+            const orthoView = orthoViews.find((view) => view === value);
+            if (orthoView !== undefined) onChange({ ...settings, orthoView });
+          }}
+        >
+          {orthoViews.map((view) => (
+            <ToggleGroupItem key={view} className="w-full cursor-pointer" value={view}>
+              {tc(orthoViewLabels[view])}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <p className="text-muted-foreground text-xs">{t('orthoViewDescription')}</p>
+      </div>
+      <SettingRow label={t('hitScoresOnly')} detail={t('hitScoresOnlyDescription')}>
+        <Switch
+          className="cursor-pointer"
+          checked={settings.hitScoresOnly}
+          onCheckedChange={(hitScoresOnly) => {
+            onChange({ ...settings, hitScoresOnly });
+          }}
+        />
+      </SettingRow>
       <Separator />
       <SettingSection title={t('players')}>
         <Accordion type="multiple">
@@ -176,6 +211,20 @@ export function BrSettingsTab({ players, settings, sabers, onChange }: BrSetting
                   </SettingSection>
                   <Separator />
                   <SettingSection title={t('saberStyle')}>
+                    <SliderSetting
+                      defaultValue={DEFAULT_BR_PLAYER_OVERRIDES.saberOpacity}
+                      id={`br-${index}-saber-opacity`}
+                      label={t('saberOpacity')}
+                      detail={t('saberOpacityDescription')}
+                      value={overrides.saberOpacity}
+                      minimum={0}
+                      maximum={1}
+                      step={0.05}
+                      display={(value) => format.number(value, 'percent', { maximumFractionDigits: 0 })}
+                      onChange={(saberOpacity) => {
+                        updatePlayer(player.key, { saberOpacity });
+                      }}
+                    />
                     <SettingRow label={t('customSaberStyle')} detail={t('customSaberStyleDescription')}>
                       <Switch
                         className="cursor-pointer"
@@ -188,8 +237,8 @@ export function BrSettingsTab({ players, settings, sabers, onChange }: BrSetting
                   </SettingSection>
                   {overrides.saber !== null && (
                     <SaberSettingsControls
-                      settings={{ ...sabers, ...overrides.saber }}
-                      defaults={sabers}
+                      settings={{ ...brSabers, ...overrides.saber }}
+                      defaults={brSabers}
                       idPrefix={`br-${index}`}
                       visibilityToggles={false}
                       onChange={(patch) => {

@@ -55,7 +55,7 @@ export function useBrViewer(session: BrSession) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   // The ortho main camera is a Battle Royale choice only: it stays out of the saved settings, which other pages read
   const [mainOrtho, setMainOrtho] = useState(false);
-  // Ortho zoom and per-player overrides, in their own store so `/` never sees them
+  // Ortho main camera, HUD and per-player overrides, in their own store so `/` never sees them
   const [brSettings, setBrSettings] = useState(loadBrSettings);
   const focusedIndexRef = useRef(focusedIndex);
   const activeSelectionRef = useRef<ActiveSelection | null>(null);
@@ -270,9 +270,18 @@ export function useBrViewer(session: BrSession) {
     viewerRef.current?.view.setMainOrthographic(mainOrtho);
   }, [mainOrtho, viewerReady]);
 
+  // The HUD lives on the main view, so this survives focus swaps; viewerReady re-applies it after a rebuild
+  useEffect(() => {
+    viewerRef.current?.view.setHitScoresOnly(brSettings.hitScoresOnly);
+  }, [brSettings.hitScoresOnly, viewerReady]);
+
   useEffect(() => {
     viewerRef.current?.view.setMainOrthographicZoom(brSettings.orthoZoom);
   }, [brSettings.orthoZoom, viewerReady]);
+
+  useEffect(() => {
+    viewerRef.current?.view.setMainOrthographicView(brSettings.orthoView);
+  }, [brSettings.orthoView, viewerReady]);
 
   useEffect(() => {
     saveBrSettings(brSettings);

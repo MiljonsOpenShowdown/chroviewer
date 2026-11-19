@@ -82,7 +82,11 @@ export function OverlayShell({ multiview }: OverlayShellProps = {}) {
     ...OVERLAY_SETTINGS,
     ...(multiview === undefined ? dynamicLocationValues() : multiview.settings),
   }));
-  const defined = definedSearch(routeSearch);
+  // Only /br repeats replayUrl into an array; this page's own search (viewerSearchSchema) always has a string
+  const defined = definedSearch({
+    ...routeSearch,
+    replayUrl: typeof routeSearch.replayUrl === 'string' ? routeSearch.replayUrl : undefined,
+  });
   const search: ViewerSearch =
     multiview === undefined
       ? {

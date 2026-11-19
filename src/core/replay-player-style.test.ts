@@ -18,6 +18,20 @@ test('merges the player saber style over the global settings', () => {
   expect(merged).toEqual({ ...global, saberModel: 'ko-circles', replayTrailLength: 0.2 });
 });
 
+test('saber opacity multiplies the trail opacity', () => {
+  const global = { ...DEFAULT_REPLAY_SABER_SETTINGS, replayTrailOpacity: 1.5 };
+  expect(playerSaberSettings(global, { ...DEFAULT_REPLAY_PLAYER_STYLE, saberOpacity: 0.5 }).replayTrailOpacity).toBe(
+    0.75,
+  );
+  expect(
+    playerSaberSettings(global, {
+      ...DEFAULT_REPLAY_PLAYER_STYLE,
+      saber: { replayTrailOpacity: 0.4 },
+      saberOpacity: 0.5,
+    }).replayTrailOpacity,
+  ).toBe(0.2);
+});
+
 test('player visibility only hides on top of the global settings', () => {
   const hiddenGlobally = { ...DEFAULT_REPLAY_SABER_SETTINGS, showSabers: false, showSaberTrails: false };
   expect(playerSaberSettings(hiddenGlobally, DEFAULT_REPLAY_PLAYER_STYLE)).toMatchObject({

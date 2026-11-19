@@ -194,7 +194,7 @@
         "default": "Default",
         "ko-circles": "Ko-Circles",
         "ko-monkey-3": "Ko - Monkey 3",
-        "mos-cc": "MOS - CC",
+        "mos-cc": "MOS - Thin",
         "mos-proficient": "MOS - Proficient",
         "mos-tourney": "MOS - Tourney",
         "mos-winner": "MOS - Winner"
@@ -294,6 +294,12 @@
       "orthoZoom": "Ortho zoom",
       "orthoZoomDescription": "Zooms the Ortho main camera in or out",
       "zoomValue": "{value}x",
+      "orthoView": "Ortho main view",
+      "orthoViewDescription": "Angle of the Ortho main camera, apart from the ortho inset's",
+      "saberOpacity": "Saber opacity",
+      "saberOpacityDescription": "Fades this player's sabers and trails",
+      "hitScoresOnly": "Hit scores only (no HUD)",
+      "hitScoresOnlyDescription": "Hides the score, combo and energy, but keeps the hit scores",
       "players": "Players",
       "colors": "Saber colors",
       "leftColor": "Left saber",
@@ -309,7 +315,7 @@
       "visibilityDescription": "Hidden in the Camera or Cosmetics tab stays hidden for every player",
       "saberStyle": "Saber style",
       "customSaberStyle": "Own saber style",
-      "customSaberStyleDescription": "Off uses the Cosmetics saber settings",
+      "customSaberStyleDescription": "Off uses the Cosmetics settings with the MOS - Thin saber",
       "resetPlayer": "Reset player"
     }
   },

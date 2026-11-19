@@ -14,6 +14,8 @@ export interface ReplayPlayerStyle {
   showTrails: boolean;
   showHeadset: boolean;
   showLabel: boolean;
+  /** Fades the sabers and, on top of their own opacity, the trails; 0-1. */
+  saberOpacity: number;
 }
 
 export const DEFAULT_REPLAY_PLAYER_STYLE: ReplayPlayerStyle = {
@@ -23,13 +25,18 @@ export const DEFAULT_REPLAY_PLAYER_STYLE: ReplayPlayerStyle = {
   showTrails: true,
   showHeadset: true,
   showLabel: true,
+  saberOpacity: 1,
 };
 
-/** The global saber settings with the player's overrides on top; visibility can only hide, never show. */
+/**
+ * The global saber settings with the player's overrides on top; visibility can only hide, never show. The saber
+ * opacity multiplies the trail opacity (the sabers themselves fade in the renderer).
+ */
 export function playerSaberSettings(global: ReplaySaberSettings, style: ReplayPlayerStyle): ReplaySaberSettings {
+  const merged = { ...global, ...style.saber };
   return {
-    ...global,
-    ...style.saber,
+    ...merged,
+    replayTrailOpacity: merged.replayTrailOpacity * style.saberOpacity,
     showSabers: global.showSabers && style.showSabers,
     showSaberTrails: global.showSaberTrails && style.showTrails,
   };

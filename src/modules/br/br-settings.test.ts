@@ -2,9 +2,11 @@ import { expect, test } from 'vite-plus/test';
 
 import type { PlayerColors } from '../../core/player-colors';
 import type { Replay } from '../../core/replay/types';
+import { DEFAULT_REPLAY_SABER_SETTINGS } from '../../core/viewer-settings';
 import {
   brPlayerKey,
   brPlayerStyle,
+  brSaberSettings,
   DEFAULT_BR_PLAYER_OVERRIDES,
   loadBrSettings,
   MAX_BR_NAME_LENGTH,
@@ -25,7 +27,7 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 test('falls back to defaults for missing, invalid or unparsable settings', () => {
-  const defaults = { orthoZoom: 1, players: {} };
+  const defaults = { orthoZoom: 1, orthoView: 'back', hitScoresOnly: true, players: {} };
   expect(sanitizeBrSettings(undefined)).toEqual(defaults);
   expect(sanitizeBrSettings('nope')).toEqual(defaults);
   expect(loadBrSettings(memoryStorage())).toEqual(defaults);
@@ -36,6 +38,27 @@ test('clamps the ortho zoom', () => {
   expect(sanitizeBrSettings({ orthoZoom: 99 }).orthoZoom).toBe(4);
   expect(sanitizeBrSettings({ orthoZoom: 0 }).orthoZoom).toBe(0.5);
   expect(sanitizeBrSettings({ orthoZoom: 'x' }).orthoZoom).toBe(1);
+});
+
+test('keeps a valid ortho main view and falls back to back', () => {
+  expect(sanitizeBrSettings({ orthoView: 'left' }).orthoView).toBe('left');
+  expect(sanitizeBrSettings({ orthoView: 'right' }).orthoView).toBe('right');
+  expect(sanitizeBrSettings({ orthoView: 'top' }).orthoView).toBe('back');
+});
+
+test('defaults saber opacity to 1 and clamps it to 0-1', () => {
+  const opacity = (saberOpacity: unknown) => sanitizeBrSettings({ players: { a: { saberOpacity } } }).players.a;
+  expect(sanitizeBrSettings({ players: { a: {} } }).players.a?.saberOpacity).toBe(1);
+  expect(opacity('x')?.saberOpacity).toBe(1);
+  expect(opacity(0.25)?.saberOpacity).toBe(0.25);
+  expect(opacity(-1)?.saberOpacity).toBe(0);
+  expect(opacity(5)?.saberOpacity).toBe(1);
+});
+
+test('defaults hit scores only to on and keeps a saved off', () => {
+  expect(sanitizeBrSettings({}).hitScoresOnly).toBe(true);
+  expect(sanitizeBrSettings({ hitScoresOnly: 'no' }).hitScoresOnly).toBe(true);
+  expect(sanitizeBrSettings({ hitScoresOnly: false }).hitScoresOnly).toBe(false);
 });
 
 test('sanitizes each field of player overrides', () => {
@@ -64,9 +87,22 @@ test('sanitizes each field of player overrides', () => {
 
 test('saves only players with overrides and loads them back', () => {
   const storage = memoryStorage();
-  const custom = { ...DEFAULT_BR_PLAYER_OVERRIDES, name: 'Hawk', saber: { saberWidth: 2 } };
-  saveBrSettings({ orthoZoom: 2, players: { 'id:1': custom, 'id:2': DEFAULT_BR_PLAYER_OVERRIDES } }, storage);
-  expect(loadBrSettings(storage)).toEqual({ orthoZoom: 2, players: { 'id:1': custom } });
+  const custom = { ...DEFAULT_BR_PLAYER_OVERRIDES, name: 'Hawk', saber: { saberWidth: 2 }, saberOpacity: 0.5 };
+  saveBrSettings(
+    {
+      orthoZoom: 2,
+      orthoView: 'right',
+      hitScoresOnly: false,
+      players: { 'id:1': custom, 'id:2': DEFAULT_BR_PLAYER_OVERRIDES },
+    },
+    storage,
+  );
+  expect(loadBrSettings(storage)).toEqual({
+    orthoZoom: 2,
+    orthoView: 'right',
+    hitScoresOnly: false,
+    players: { 'id:1': custom },
+  });
 });
 
 test('ignores storage that throws', () => {
@@ -78,9 +114,9 @@ test('ignores storage that throws', () => {
       throw new Error('full');
     },
   };
-  expect(loadBrSettings(throwing)).toEqual({ orthoZoom: 1, players: {} });
+  expect(loadBrSettings(throwing)).toEqual({ orthoZoom: 1, orthoView: 'back', hitScoresOnly: true, players: {} });
   expect(() => {
-    saveBrSettings({ orthoZoom: 1, players: {} }, throwing);
+    saveBrSettings({ orthoZoom: 1, orthoView: 'back', hitScoresOnly: true, players: {} }, throwing);
   }).not.toThrow();
 });
 
@@ -104,4 +140,22 @@ test('builds the renderer style from overrides', () => {
   expect(style.colors).toEqual({ left: [0, 1, 0], right: [0, 0, 1] });
   expect(style.showLabel).toBe(false);
   expect(rgbToHex([1, 0.5, 0])).toBe('#ff8000');
+});
+
+test('layers the MOS - Thin default between the Cosmetics sabers and the player style', () => {
+  const colors: PlayerColors = { left: [1, 0, 0], right: [0, 0, 1] };
+  expect(brPlayerStyle(DEFAULT_BR_PLAYER_OVERRIDES, colors).saber).toEqual({ saberModel: 'mos-cc' });
+  expect(
+    brPlayerStyle({ ...DEFAULT_BR_PLAYER_OVERRIDES, saber: { saberModel: 'ko-circles', saberWidth: 2 } }, colors).saber,
+  ).toEqual({ saberModel: 'ko-circles', saberWidth: 2 });
+  expect(brPlayerStyle({ ...DEFAULT_BR_PLAYER_OVERRIDES, saber: { saberWidth: 2 } }, colors).saber).toEqual({
+    saberModel: 'mos-cc',
+    saberWidth: 2,
+  });
+  expect(brSaberSettings({ ...DEFAULT_REPLAY_SABER_SETTINGS, saberModel: 'default', saberWidth: 1.5 })).toEqual({
+    ...DEFAULT_REPLAY_SABER_SETTINGS,
+    saberModel: 'mos-cc',
+    saberWidth: 1.5,
+  });
+  expect(brPlayerStyle({ ...DEFAULT_BR_PLAYER_OVERRIDES, saberOpacity: 0.3 }, colors).saberOpacity).toBe(0.3);
 });

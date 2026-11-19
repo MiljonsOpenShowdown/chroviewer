@@ -2,7 +2,13 @@ import * as z from 'zod/mini';
 
 import type { Rgb } from '../../core/colors';
 import type { PlayerSaberStyle, ReplayPlayerStyle } from '../../core/replay-player-style';
-import { DEFAULT_REPLAY_SABER_SETTINGS, hexToRgb, viewerSettingsPatchSchema } from '../../core/viewer-settings';
+import {
+  DEFAULT_REPLAY_SABER_SETTINGS,
+  hexToRgb,
+  viewerSettingsPatchSchema,
+  type ReplaySaberSettings,
+  type ViewerSettings,
+} from '../../core/viewer-settings';
 import type { BrPlayer } from './br-load';
 
 /** One player's Battle Royale overrides. Everything defaults to the global settings and generated colours. */
@@ -16,13 +22,19 @@ export interface BrPlayerOverrides {
   showTrails: boolean;
   showHeadset: boolean;
   showLabel: boolean;
-  /** Merged over the Cosmetics saber settings, or null to use them as they are. */
+  /** Merged over brSaberSettings, or null to use them as they are. */
   saber: PlayerSaberStyle | null;
+  /** Fades the sabers and trails, 0-1. */
+  saberOpacity: number;
 }
 
 export interface BrSettings {
   /** Zoom of the ortho main camera; 1 is the inset's framing. */
   orthoZoom: number;
+  /** Angle of the ortho main camera, apart from the inset's. */
+  orthoView: ViewerSettings['orthoCameraView'];
+  /** Hides the gameplay HUD but keeps the hit scores, like /overlay. */
+  hitScoresOnly: boolean;
   /** By brPlayerKey, so a player keeps their overrides on every Battle Royale page. */
   players: Record<string, BrPlayerOverrides>;
 }
@@ -39,9 +51,18 @@ export const DEFAULT_BR_PLAYER_OVERRIDES: BrPlayerOverrides = {
   showHeadset: true,
   showLabel: true,
   saber: null,
+  saberOpacity: 1,
 };
 
-const DEFAULT_BR_SETTINGS: BrSettings = { orthoZoom: BR_ORTHO_ZOOM.default, players: {} };
+const DEFAULT_BR_SETTINGS: BrSettings = {
+  orthoZoom: BR_ORTHO_ZOOM.default,
+  orthoView: 'back',
+  hitScoresOnly: true,
+  players: {},
+};
+
+// Battle Royale sabers start from the thin MOS saber, whatever the Cosmetics model
+const BR_DEFAULT_SABER_STYLE: PlayerSaberStyle = { saberModel: 'mos-cc' };
 
 const storageKey = 'chroviewer.br-settings.v1';
 const hexPattern = /^#[0-9a-f]{6}$/i;
@@ -93,6 +114,10 @@ const playerOverridesSchema = z.catch(
     showHeadset: z.catch(z.boolean(), true),
     showLabel: z.catch(z.boolean(), true),
     saber: saberStyleSchema,
+    saberOpacity: z.pipe(
+      z.catch(z.number(), 1),
+      z.transform((value) => Math.min(Math.max(value, 0), 1)),
+    ),
   }),
   DEFAULT_BR_PLAYER_OVERRIDES,
 );
@@ -103,6 +128,8 @@ const brSettingsSchema = z.catch(
       z.catch(z.number(), BR_ORTHO_ZOOM.default),
       z.transform((value) => Math.min(Math.max(value, BR_ORTHO_ZOOM.minimum), BR_ORTHO_ZOOM.maximum)),
     ),
+    orthoView: z.catch(z.enum(['back', 'left', 'right']), 'back'),
+    hitScoresOnly: z.catch(z.boolean(), true),
     players: z.catch(z.record(z.string(), playerOverridesSchema), {}),
   }),
   DEFAULT_BR_SETTINGS,
@@ -157,6 +184,11 @@ export function rgbToHex(color: Rgb) {
     .join('')}`;
 }
 
+/** The saber settings a player without their own saber style uses: the Cosmetics ones with the BR default model. */
+export function brSaberSettings(cosmetics: ReplaySaberSettings): ReplaySaberSettings {
+  return { ...cosmetics, ...BR_DEFAULT_SABER_STYLE };
+}
+
 /** The renderer style of a player's overrides; `generated` are their generated colours. */
 export function brPlayerStyle(overrides: BrPlayerOverrides, generated: { left: Rgb; right: Rgb }): ReplayPlayerStyle {
   return {
@@ -167,10 +199,12 @@ export function brPlayerStyle(overrides: BrPlayerOverrides, generated: { left: R
             left: overrides.leftColor === null ? generated.left : hexToRgb(overrides.leftColor),
             right: overrides.rightColor === null ? generated.right : hexToRgb(overrides.rightColor),
           },
-    saber: overrides.saber,
+    // The BR default model sits between the Cosmetics settings and the player's own style
+    saber: { ...BR_DEFAULT_SABER_STYLE, ...overrides.saber },
     showSabers: overrides.showSabers,
     showTrails: overrides.showTrails,
     showHeadset: overrides.showHeadset,
     showLabel: overrides.showLabel,
+    saberOpacity: overrides.saberOpacity,
   };
 }

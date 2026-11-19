@@ -29,7 +29,7 @@ export function BrShell() {
 
   if (state.status === 'ready') return <BrViewer session={state.session} />;
   return (
-    <main className="flex h-dvh flex-col items-center justify-center gap-3 p-6 text-white">
+    <main className="flex h-dvh flex-col items-center justify-center gap-3 bg-black p-6 text-white">
       {state.status === 'loading' && <p>{t('loading', { loaded: state.loaded, total: state.total })}</p>}
       {state.status === 'error' && <p role="alert">{state.message}</p>}
     </main>

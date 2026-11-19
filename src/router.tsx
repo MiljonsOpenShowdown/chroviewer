@@ -1,9 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { createRouter, defaultParseSearch } from '@tanstack/react-router';
-import { AlertCircle, LoaderCircle } from 'lucide-react';
 import { z } from 'zod';
 
 import { createQueryClient } from './app/query-client';
+import { ErrorFallback, PendingFallback } from './app/route-fallbacks';
 import { routeTree } from './routeTree.gen';
 
 type RouterSearchValue =
@@ -160,6 +160,11 @@ const stringSearchAliases = {
   poolShowcaseConfig: ['poolshowcaseconfig'],
 };
 
+// /br score ID lists: a repeated key (legacy ss=1&ss=2) joins into the canonical comma list ss=1,2
+const commaListSearchKeys = new Set(['ss', 'bl']);
+// /br replay URLs may contain commas, so they repeat the key instead; a repeated key stays an array
+const repeatedSearchKeys = new Set(['replayUrl']);
+
 export function parseUrlSearch(search: string) {
   const raw = z.record(z.string(), z.json()).parse(defaultParseSearch(search));
   const parsed: Record<string, RouterSearchValue> = {};
@@ -174,12 +179,15 @@ export function parseUrlSearch(search: string) {
   }
   const searchParams = new URLSearchParams(search);
   for (const [canonical, aliases] of Object.entries(stringSearchAliases)) {
-    const entry = [...searchParams].find(([key]) => aliases.includes(key.toLowerCase()));
-    if (entry !== undefined) parsed[canonical] = entry[1];
+    const values = [...searchParams].filter(([key]) => aliases.includes(key.toLowerCase())).map(([, value]) => value);
+    const first = values[0];
+    if (first === undefined) continue;
+    parsed[canonical] = commaListSearchKeys.has(canonical)
+      ? values.join(',')
+      : repeatedSearchKeys.has(canonical) && values.length > 1
+        ? values
+        : first;
   }
-  // /br takes several replay URLs; the loop above keeps only the first one in replayUrl
-  const replayUrls = [...searchParams].filter(([key]) => key.toLowerCase() === 'replayurl').map(([, value]) => value);
-  if (replayUrls.length > 1) parsed.replayUrls = replayUrls;
   const nestedSettings: Record<string, RouterSearchValue> =
     typeof parsed.settings === 'object' && parsed.settings !== null && !Array.isArray(parsed.settings)
       ? { ...parsed.settings }
@@ -197,10 +205,15 @@ export function parseUrlSearch(search: string) {
   return parsed;
 }
 
-function stringifyUrlSearch(search: Record<string, RouterSearchValue>) {
+export function stringifyUrlSearch(search: Record<string, RouterSearchValue>) {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(search)) appendSearchValue(searchParams, key, value);
-  const next = searchParams.toString();
+  // Score ID lists keep their commas readable (ss=1,2, as links are written), so the router leaves them as typed
+  const next = searchParams
+    .toString()
+    .split('&')
+    .map((pair) => (commaListSearchKeys.has(pair.slice(0, pair.indexOf('='))) ? pair.replaceAll('%2C', ',') : pair))
+    .join('&');
   return next === '' ? '' : `?${next}`;
 }
 
@@ -211,35 +224,6 @@ function appendSearchValue(searchParams: URLSearchParams, key: string, value: Ro
     return;
   }
   searchParams.append(key, value instanceof Object ? JSON.stringify(value) : String(value));
-}
-
-function PendingFallback() {
-  return (
-    <main className="flex h-dvh items-center justify-center bg-transparent text-white">
-      <LoaderCircle className="size-11 animate-spin" strokeWidth={1.75} aria-label="Loading" />
-    </main>
-  );
-}
-
-function ErrorFallback({ error }: { error: unknown }) {
-  return (
-    <main className="flex h-dvh flex-col items-center justify-center gap-4 bg-transparent text-white">
-      <AlertCircle className="size-11" strokeWidth={1.75} />
-      <span className="text-lg font-semibold tracking-wide">Something went wrong</span>
-      {error instanceof Error && error.message !== '' && (
-        <span className="max-w-[min(34rem,calc(100vw-1.5rem))] text-sm text-white/60">{error.message}</span>
-      )}
-      <button
-        className="rounded-full border border-white/20 px-4 py-2 text-sm hover:bg-white/10"
-        type="button"
-        onClick={() => {
-          window.location.reload();
-        }}
-      >
-        Reload
-      </button>
-    </main>
-  );
 }
 
 export function getRouter() {

@@ -21,7 +21,7 @@ export function useBrLoad(search: BrSearch): BrLoadState {
   const [state, setState] = useState<BrLoadState>({ status: 'loading', loaded: 0, total: 0 });
   const filesRef = useRef<File[] | null>(null);
   filesRef.current ??= takeBrPendingFiles();
-  const searchKey = JSON.stringify([search.ss, search.bl, search.replayUrls, search.map]);
+  const searchKey = JSON.stringify([search.ss, search.bl, search.replayUrl, search.map]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,14 +63,21 @@ export function useBrLoad(search: BrSearch): BrLoadState {
       onPlayerLoaded: (loaded, total) => {
         if (!controller.signal.aborted) setState({ status: 'loading', loaded, total });
       },
-    }).then((result) => {
-      if (controller.signal.aborted) return;
-      setState(
-        result.isErr()
-          ? { status: 'error', message: `${t('errors.failedSource')}: ${result.error.message}` }
-          : { status: 'ready', session: result.value },
-      );
-    });
+    })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setState(
+          result.isErr()
+            ? { status: 'error', message: `${t('errors.failedSource')}: ${result.error.message}` }
+            : { status: 'ready', session: result.value },
+        );
+      })
+      // A loader that throws instead of returning an error must still end on the error screen
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        setState({ status: 'error', message: `${t('errors.failedSource')}: ${reason}` });
+      });
     return () => {
       controller.abort();
       parser?.dispose();

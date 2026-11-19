@@ -523,7 +523,8 @@ export function useViewerRemoteSource({
 
   useEffect(() => {
     if (!enabled) return;
-    const replayUrl = replayUrlOverride ?? search.replayUrl;
+    // Only /br repeats replayUrl into an array; the viewer's own search always has a string
+    const replayUrl = replayUrlOverride ?? (typeof search.replayUrl === 'string' ? search.replayUrl : undefined);
     if (replayUrl !== undefined) {
       const requestId = beginSourceRequest();
       const sharedSettings = search.settings;

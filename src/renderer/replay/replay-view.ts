@@ -63,6 +63,7 @@ import {
   type ReplaySaberModel,
   type ReplaySaberTrail,
 } from './saber';
+import { setSaberMaterialOpacity } from './saber-opacity';
 
 function saberCoreColor([red, green, blue]: Rgb): Rgb {
   return [0.55 + red * 0.45, 0.55 + green * 0.45, 0.55 + blue * 0.45];
@@ -120,6 +121,9 @@ export class ReplayView {
   private readonly replayTrails: ReplaySaberTrail[] = [];
   private readonly defaultReplayTrailMaterials: ShaderMaterial[] = [];
   private readonly replaySaberColorMaterials: { blade: ShaderMaterial; core: ShaderMaterial }[] = [];
+  // Blade, core and hilt of the built-in sabers, faded by setSaberOpacity
+  private readonly saberBodyMaterials: ShaderMaterial[] = [];
+  private saberOpacity = 1;
   private saberColors: [Rgb, Rgb] = [[...DEFAULT_COLORS.leftNote], [...DEFAULT_COLORS.rightNote]];
   private customSaberLoadGeneration = 0;
   private loadedCustomSaberModel: ReplaySaberModelId = 'default';
@@ -130,6 +134,7 @@ export class ReplayView {
   private playerHeadsetVisible = true;
   private playerLabelVisible = true;
   private orthographicOverlayRendering = false;
+  private forceHeadset = false;
   private saberSettings = DEFAULT_REPLAY_SABER_SETTINGS;
   private replay: Replay | null = null;
   private hasSampledReplayPose = false;
@@ -186,6 +191,7 @@ export class ReplayView {
       this.replayGeometries.push(...saber.geometries);
       this.replayMaterials.push(bladeMaterial, coreMaterial);
       this.replaySaberColorMaterials.push({ blade: bladeMaterial, core: coreMaterial });
+      this.saberBodyMaterials.push(bladeMaterial, coreMaterial);
       const trailMaterial = createSaberTrailMaterial(color);
       this.defaultReplayTrailMaterials.push(trailMaterial);
       const trail = createReplaySaberTrail(trailMaterial);
@@ -195,6 +201,7 @@ export class ReplayView {
       this.replayTrails.push(trail);
     }
     this.replayMaterials.push(metalMaterial, gripMaterial);
+    this.saberBodyMaterials.push(metalMaterial, gripMaterial);
     this.replayLeftHand.add(this.replayLeftOffset);
     this.replayRightHand.add(this.replayRightOffset);
     this.replayHeadTrack.add(this.replayHeadset.root);
@@ -340,7 +347,7 @@ export class ReplayView {
     // Neither shows in the player's own first-person view; the label goes with the headset setting
     const visible =
       this.showHeadset && (this.orthographicOverlayRendering || this.cameraController?.cameraMode !== 'first-person');
-    this.replayHeadset.root.visible = visible && this.playerHeadsetVisible;
+    this.replayHeadset.root.visible = this.forceHeadset || (visible && this.playerHeadsetVisible);
     if (this.nameLabel !== null) this.nameLabel.sprite.visible = visible && this.playerLabelVisible;
   }
 
@@ -373,9 +380,19 @@ export class ReplayView {
     this.updateHeadsetVisibility();
   }
 
-  setOrthographicOverlayRendering(rendering: boolean) {
+  /** `forceHeadset` draws the headset whatever the Show headset settings (ortho inset from the side). */
+  setOrthographicOverlayRendering(rendering: boolean, forceHeadset = false) {
     this.orthographicOverlayRendering = rendering;
+    this.forceHeadset = rendering && forceHeadset;
     this.updateHeadsetVisibility();
+  }
+
+  /** Fades this player's sabers, built-in or custom, to `opacity` (0-1); trails fade through replayTrailOpacity. */
+  setSaberOpacity(opacity: number) {
+    this.saberOpacity = opacity;
+    for (const material of [...this.saberBodyMaterials, ...this.customSaberMaterials]) {
+      setSaberMaterialOpacity(material, opacity);
+    }
   }
 
   setSaberSettings(settings: ReplaySaberSettings) {
@@ -641,6 +658,7 @@ export class ReplayView {
       for (const [index, instance] of instances.entries()) {
         this.customSaberRoots[index]?.add(instance.root);
         this.customSaberMaterials.push(...instance.materials);
+        for (const material of instance.materials) setSaberMaterialOpacity(material, this.saberOpacity);
         this.customSaberColorBindings[index] = instance.colorBindings;
         this.customSaberBrightnessBindings.push(...instance.brightnessBindings);
         for (const binding of instance.colorBindings) {
