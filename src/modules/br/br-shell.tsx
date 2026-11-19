@@ -146,6 +146,7 @@ function BrViewer({ session }: { session: BrSession }) {
       <BrPlayerPanel
         title={viewer.mapMeta?.title ?? null}
         players={viewer.players}
+        playerKeys={viewer.playerKeys}
         scores={scores}
         focusedIndex={viewer.focusedIndex}
         visible={chromeVisible}

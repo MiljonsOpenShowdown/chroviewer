@@ -333,6 +333,7 @@ export function useBrViewer(session: BrSession) {
     mapMeta,
     orthoOverlayRef,
     players: namedPlayers,
+    playerKeys,
     ready: timelines !== null,
     setError,
     setSettings,
