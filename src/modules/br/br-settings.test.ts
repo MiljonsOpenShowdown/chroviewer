@@ -5,6 +5,7 @@ import type { Replay } from '../../core/replay/types';
 import { DEFAULT_REPLAY_SABER_SETTINGS } from '../../core/viewer-settings';
 import {
   brPlayerKey,
+  brPlayerKeys,
   brPlayerStyle,
   brSaberSettings,
   DEFAULT_BR_PLAYER_OVERRIDES,
@@ -131,6 +132,45 @@ test('keys players by platform ID, falling back to the entry label', () => {
     }),
   ).toBe('id:1');
   expect(brPlayerKey({ label: 'a.bsor', replay: replay() })).toBe('entry:a.bsor');
+});
+
+test('keys a player listed more than once per entry, keeping the first entry on the plain key', () => {
+  const replay = (id?: string) => ({ metadata: { player: id === undefined ? undefined : { id, name: id } } }) as Replay;
+  expect(brPlayerKeys([{ label: 'a.bsor', replay: replay('1') }])).toEqual(['id:1']);
+  expect(
+    brPlayerKeys([
+      { label: 'a.bsor', replay: replay('1') },
+      { label: 'b.bsor', replay: replay('2') },
+      { label: 'c.bsor', replay: replay('1') },
+      { label: 'x.bsor', replay: replay() },
+      { label: 'd.bsor', replay: replay('1') },
+      { label: 'x.bsor', replay: replay() },
+    ]),
+  ).toEqual(['id:1', 'id:2', 'id:1#2', 'entry:x.bsor', 'id:1#3', 'entry:x.bsor#2']);
+});
+
+test('gives two entries of one player independent overrides that both persist', () => {
+  const replay = { metadata: { player: { id: '1', name: 'A' } } } as Replay;
+  const [first = '', second = ''] = brPlayerKeys([
+    { label: 'a.bsor', replay },
+    { label: 'b.bsor', replay },
+  ]);
+  const storage = memoryStorage();
+  saveBrSettings(
+    {
+      orthoZoom: 1,
+      orthoView: 'back',
+      hitScoresOnly: true,
+      players: {
+        [first]: { ...DEFAULT_BR_PLAYER_OVERRIDES, saberOpacity: 0.5 },
+        [second]: { ...DEFAULT_BR_PLAYER_OVERRIDES, leftColor: '#00ff00' },
+      },
+    },
+    storage,
+  );
+  const loaded = loadBrSettings(storage).players;
+  expect(loaded['id:1']).toEqual({ ...DEFAULT_BR_PLAYER_OVERRIDES, saberOpacity: 0.5 });
+  expect(loaded['id:1#2']).toEqual({ ...DEFAULT_BR_PLAYER_OVERRIDES, leftColor: '#00ff00' });
 });
 
 test('builds the renderer style from overrides', () => {

@@ -26,7 +26,13 @@ import { useViewerRenderer } from '../viewer/use-viewer-renderer';
 import { useViewerSettingsSync } from '../viewer/use-viewer-settings-sync';
 import type { ActiveSelection, MapMeta } from '../viewer/viewer-types';
 import type { BrSession } from './br-load';
-import { brPlayerKey, brPlayerStyle, DEFAULT_BR_PLAYER_OVERRIDES, loadBrSettings, saveBrSettings } from './br-settings';
+import {
+  brPlayerKeys,
+  brPlayerStyle,
+  DEFAULT_BR_PLAYER_OVERRIDES,
+  loadBrSettings,
+  saveBrSettings,
+} from './br-settings';
 import { useBrPlayerNames } from './use-br-player-names';
 
 // The parsed map of a session. It outlives renderer rebuilds (graphics quality), which only show it again.
@@ -99,7 +105,8 @@ export function useBrViewer(session: BrSession) {
     [session],
   );
   const resolvedNames = useBrPlayerNames(session.players);
-  const playerKeys = useMemo(() => session.players.map(brPlayerKey), [session]);
+  // A player listed twice gets a key per entry, so each entry has its own overrides
+  const playerKeys = useMemo(() => brPlayerKeys(session.players), [session]);
   const overrides = playerKeys.map((key) => brSettings.players[key] ?? DEFAULT_BR_PLAYER_OVERRIDES);
   // A display name override replaces the resolved name in the panel and the 3D label
   const names = resolvedNames.map((name, index) => {

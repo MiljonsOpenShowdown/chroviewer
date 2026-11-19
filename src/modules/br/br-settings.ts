@@ -35,7 +35,7 @@ export interface BrSettings {
   orthoView: ViewerSettings['orthoCameraView'];
   /** Hides the gameplay HUD but keeps the hit scores, like /overlay. */
   hitScoresOnly: boolean;
-  /** By brPlayerKey, so a player keeps their overrides on every Battle Royale page. */
+  /** By brPlayerKeys, so a player keeps their overrides on every Battle Royale page. */
   players: Record<string, BrPlayerOverrides>;
 }
 
@@ -172,6 +172,20 @@ export function saveBrSettings(settings: BrSettings, storage: Pick<Storage, 'set
 export function brPlayerKey(player: Pick<BrPlayer, 'label' | 'profile' | 'replay'>) {
   const id = player.profile?.id ?? player.replay.metadata.player?.id;
   return id !== undefined && id.trim() !== '' ? `id:${id.trim()}` : `entry:${player.label}`;
+}
+
+/**
+ * The overrides key of each entry of one Battle Royale. A player listed more than once gets independent overrides:
+ * their first entry keeps brPlayerKey (so saved overrides still match), later ones get `#2`, `#3` and so on.
+ */
+export function brPlayerKeys(players: readonly Pick<BrPlayer, 'label' | 'profile' | 'replay'>[]) {
+  const seen = new Map<string, number>();
+  return players.map((player) => {
+    const key = brPlayerKey(player);
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    return count === 1 ? key : `${key}#${count}`;
+  });
 }
 
 export function rgbToHex(color: Rgb) {

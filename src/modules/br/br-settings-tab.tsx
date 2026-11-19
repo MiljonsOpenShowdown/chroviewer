@@ -26,7 +26,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 interface BrSettingsPlayer {
-  /** brPlayerKey */
+  /** From brPlayerKeys */
   key: string;
   /** Resolved name, before the display name override. */
   name: string;
